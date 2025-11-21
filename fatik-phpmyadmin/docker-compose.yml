@@ -12,8 +12,6 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${APP_PASSWORD}
       MYSQL_DATABASE: main
-      MYSQL_USER: app
-      MYSQL_PASSWORD: ${APP_PASSWORD}
     volumes:
       - ${APP_DATA_DIR}/mysql:/var/lib/mysql
 
@@ -23,7 +21,7 @@ services:
     environment:
       PMA_HOST: db
       PMA_PORT: 3306
-      PMA_USER: app
+      PMA_USER: root
       PMA_PASSWORD: ${APP_PASSWORD}
     depends_on:
       - db
