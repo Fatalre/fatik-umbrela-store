@@ -8,10 +8,10 @@ description: >-
   phpMyAdmin + MariaDB в одном приложении Umbrel.
   Можно загружать дампы, просматривать таблицы и выполнять запросы.
 
-developer: You
-website: https://www.phpmyadmin.net
+developer: Fatalre
+website: https://bitstudio.com.ua
 repo: https://github.com/phpmyadmin/phpmyadmin
-support: https://www.phpmyadmin.net
+support: https://bitstudio.com.ua
 
 port: 8081
 icon: https://www.phpmyadmin.net/static/images/logo.png
@@ -22,5 +22,5 @@ dependencies: []
 path: ""
 defaultUsername: ""
 defaultPassword: ""
-submitter: you
+submitter: Fatalre
 submission: https://github.com/you/my-umbrel-store
