@@ -1,0 +1,26 @@
+manifestVersion: 1
+id: fatik-phpmyadmin
+name: phpMyAdmin
+category: developer
+version: "1.0.0"
+tagline: Web interface for MySQL and MariaDB
+description: >-
+  phpMyAdmin + MariaDB в одном приложении Umbrel.
+  Можно загружать дампы, просматривать таблицы и выполнять запросы.
+
+developer: You
+website: https://www.phpmyadmin.net
+repo: https://github.com/phpmyadmin/phpmyadmin
+support: https://www.phpmyadmin.net
+
+port: 8081
+icon: https://www.phpmyadmin.net/static/images/logo.png
+
+gallery: []
+releaseNotes: ""
+dependencies: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+submitter: you
+submission: https://github.com/you/my-umbrel-store
