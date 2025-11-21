@@ -3,7 +3,7 @@ version: "3.7"
 services:
   app_proxy:
     environment:
-      APP_HOST: my-phpmyadmin_web_1
+      APP_HOST: fatik-phpmyadmin_web_1
       APP_PORT: 80
 
   db:
