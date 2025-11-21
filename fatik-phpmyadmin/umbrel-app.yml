@@ -2,7 +2,7 @@ manifestVersion: 1
 id: fatik-phpmyadmin
 name: phpMyAdmin
 category: developer
-version: "1.0.1"
+version: "1.0.2"
 tagline: Web interface for MySQL and MariaDB
 description: >-
   phpMyAdmin + MariaDB в одном приложении Umbrel.
