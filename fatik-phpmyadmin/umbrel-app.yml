@@ -2,10 +2,10 @@ manifestVersion: 1
 id: fatik-phpmyadmin
 name: phpMyAdmin
 category: developer
-version: "1.0.6"
+version: "1.0.7"
 tagline: Web interface for MySQL and MariaDB
 description: >-
-  phpMyAdmin + MariaDB в одном приложении Umbrel.
+  НЕ РАБОТАЕТ НЕТ ПОДКЛЮЧЕНИЯ К БД ИЗ-ЗА UMBRELOS phpMyAdmin + MariaDB в одном приложении Umbrel.
   При установке автоматически создаётся пользователь admin и база main.
   Логин: admin, пароль: admin, server: db.
 
