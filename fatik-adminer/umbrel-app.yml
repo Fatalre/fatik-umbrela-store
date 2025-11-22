@@ -1,0 +1,27 @@
+manifestVersion: 1
+id: fatik-adminer
+name: Adminer
+category: developer
+version: "1.0.0"
+tagline: Lightweight web database manager
+description: >-
+  Adminer + MariaDB в одном приложении Umbrel.
+  При установке создаётся база main и пользователь root с паролем admin.
+  Данные хранятся в app-data и переживают перезагрузку.
+
+developer: Fatalre
+website: https://bitstudio.com.ua
+repo: https://github.com/vrana/adminer
+support: https://bitstudio.com.ua
+
+port: 8082
+icon: https://www.adminer.org/static/adminer-logo.png
+
+gallery: []
+releaseNotes: ""
+dependencies: []
+path: ""
+defaultUsername: "root"
+defaultPassword: "admin"
+submitter: Fatalre
+submission: https://github.com/Fatalre/fatik-umbrela-store.git
