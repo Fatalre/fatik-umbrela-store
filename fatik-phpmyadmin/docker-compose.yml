@@ -10,10 +10,10 @@ services:
     image: mariadb:10.11
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${APP_PASSWORD}
+      MYSQL_ROOT_PASSWORD: admin
       MYSQL_DATABASE: main
       MYSQL_USER: admin
-      MYSQL_PASSWORD: ${APP_PASSWORD}
+      MYSQL_PASSWORD: admin
     volumes:
       - ${APP_DATA_DIR}/mysql:/var/lib/mysql
 
@@ -23,7 +23,8 @@ services:
     environment:
       PMA_HOST: db
       PMA_PORT: 3306
-      PMA_USER: admin
-      PMA_PASSWORD: ${APP_PASSWORD}
+      PMA_ARBITRARY: 1    # включаем ручной логин
     depends_on:
       - db
+    volumes:
+      - ${APP_DATA_DIR}/config:/config
