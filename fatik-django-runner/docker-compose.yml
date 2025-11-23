@@ -3,21 +3,16 @@ version: "3.7"
 services:
   app_proxy:
     environment:
-      # <id приложения>_<имя сервиса>_1
-      # В нашем случае: fatik-django-runner_web_1
       APP_HOST: fatik-django-runner_web_1
       APP_PORT: 8000
 
   web:
-    # тут имя образа, который мы соберём чуть ниже
     image: fatik/django-runner:0.1.0
     restart: on-failure
     stop_grace_period: 1m
     volumes:
-      # здесь будут лежать проекты, venv’ы и прочие данные
       - ${APP_DATA_DIR}/data:/data
     environment:
-      # полезно пробросить системные переменные Umbrel
       DEVICE_HOSTNAME: ${DEVICE_HOSTNAME}
       DEVICE_DOMAIN_NAME: ${DEVICE_DOMAIN_NAME}
       APP_PASSWORD: ${APP_PASSWORD}
