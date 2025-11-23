@@ -1,55 +1,244 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, render_template_string, redirect, url_for
 import os
 import zipfile
 import uuid
+import json
+import re
+import subprocess
+from typing import Optional, Dict, Any
 
 app = Flask(__name__)
 
-DATA_DIR = "/data/projects"
+# Umbrel монтирует том как: ${APP_DATA_DIR}/data:/data
+DATA_BASE_DIR = "/data"
+PROJECTS_DIR = os.path.join(DATA_BASE_DIR, "projects")
+STATE_FILE = os.path.join(DATA_BASE_DIR, "runner.json")
 
-# HTML форма прямо в коде (потом можно вынести в шаблон)
-UPLOAD_FORM = """
-<h2>Загрузить Django проект (ZIP)</h2>
-<form action="/upload" method="post" enctype="multipart/form-data">
-    <input type="file" name="zip_file" accept=".zip" required>
-    <br><br>
-    <button type="submit">Загрузить</button>
-</form>
+os.makedirs(PROJECTS_DIR, exist_ok=True)
+
+
+# ---------- Работа с состоянием ----------
+
+def load_state() -> Dict[str, Any]:
+    if not os.path.exists(STATE_FILE):
+        return {"projects": []}
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        # если файл битый — не валим приложение
+        return {"projects": []}
+
+
+def save_state(state: Dict[str, Any]) -> None:
+    tmp_file = STATE_FILE + ".tmp"
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, STATE_FILE)
+
+
+def find_first(root: str, filename: str) -> Optional[str]:
+    """Рекурсивно ищем первый файл с таким именем."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        if filename in filenames:
+            return os.path.join(dirpath, filename)
+    return None
+
+
+def detect_settings_module(manage_path: str, project_root: str) -> Optional[str]:
+    """Пытаемся найти DJANGO_SETTINGS_MODULE, иначе строим его по пути settings.py."""
+    try:
+        with open(manage_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return None
+
+    # os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mysite.settings')
+    m = re.search(r"DJANGO_SETTINGS_MODULE[\"']\s*,\s*[\"']([^\"']+)[\"']", text)
+    if m:
+        return m.group(1)
+
+    # fallback: ищем settings.py
+    settings_path = find_first(project_root, "settings.py")
+    if not settings_path:
+        return None
+
+    rel = os.path.relpath(settings_path, project_root)
+    if rel.endswith(".py"):
+        rel = rel[:-3]
+    return rel.replace(os.sep, ".")
+
+
+def register_project(root_dir: str, zip_filename: str) -> Dict[str, Any]:
+    """Сканируем только что распакованный проект и сохраняем в runner.json."""
+    manage_py = find_first(root_dir, "manage.py")
+    requirements = find_first(root_dir, "requirements.txt")
+    env_file = find_first(root_dir, ".env")
+    settings_module = detect_settings_module(manage_py, root_dir) if manage_py else None
+
+    # имя проекта: папка с manage.py или имя архива
+    if manage_py:
+        project_name = os.path.basename(os.path.dirname(manage_py))
+    else:
+        project_name = os.path.splitext(os.path.basename(zip_filename))[0]
+
+    project = {
+        "id": os.path.basename(root_dir),
+        "name": project_name,
+        "root_dir": root_dir,
+        "manage_py": manage_py,
+        "settings_module": settings_module,
+        "env_file": env_file,
+        "requirements": requirements,
+        "venv_path": os.path.join(DATA_BASE_DIR, "venvs", os.path.basename(root_dir)),
+        "requirements_installed": False,
+        "last_error": None,
+    }
+
+    state = load_state()
+    state["projects"] = [p for p in state["projects"] if p.get("id") != project["id"]]
+    state["projects"].append(project)
+    save_state(state)
+
+    return project
+
+
+# ---------- HTML-шаблон ----------
+
+INDEX_TEMPLATE = """
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Django Runner</title>
+    <style>
+      body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 2rem; }
+      .project-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 1rem; }
+      .project-title { font-weight: 600; font-size: 1.1rem; margin-bottom: 0.3rem; }
+      .muted { color: #666; font-size: 0.9rem; }
+      .error { color: #b00020; font-size: 0.9rem; margin-top: 0.3rem; }
+      button { padding: 0.3rem 0.7rem; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <h1>Django Runner</h1>
+
+    <h2>Загрузить Django проект (ZIP)</h2>
+    <form action="{{ url_for('upload_zip') }}" method="post" enctype="multipart/form-data">
+      <input type="file" name="zip_file" accept=".zip" required>
+      <button type="submit">Загрузить</button>
+    </form>
+
+    <h2 style="margin-top:2rem;">Проекты</h2>
+    {% if not projects %}
+      <p class="muted">Пока ни одного проекта не загружено.</p>
+    {% else %}
+      {% for p in projects %}
+        <div class="project-card">
+          <div class="project-title">{{ p.name }} <span class="muted">({{ p.id }})</span></div>
+          <div class="muted">Корневая папка: {{ p.root_dir }}</div>
+          <div class="muted">manage.py: {{ p.manage_py or "не найден" }}</div>
+          <div class="muted">settings: {{ p.settings_module or "не определён" }}</div>
+          <div class="muted">.env: {{ p.env_file or "не найден" }}</div>
+          <div class="muted">requirements.txt: {{ p.requirements or "не найден" }}</div>
+          <div class="muted">Зависимости: {{ "установлены" if p.requirements_installed else "не установлены" }}</div>
+          {% if p.last_error %}
+            <div class="error">Последняя ошибка: {{ p.last_error }}</div>
+          {% endif %}
+          {% if p.requirements %}
+            <form action="{{ url_for('install_requirements', project_id=p.id) }}" method="post" style="margin-top:0.5rem;">
+              <button type="submit">Установить зависимости</button>
+            </form>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% endif %}
+  </body>
+</html>
 """
+
+
+# ---------- Роуты ----------
 
 @app.route("/")
 def index():
-    return UPLOAD_FORM
+    state = load_state()
+    projects = state.get("projects", [])
+    return render_template_string(INDEX_TEMPLATE, projects=projects)
+
 
 @app.route("/upload", methods=["POST"])
 def upload_zip():
     if "zip_file" not in request.files:
-        return "Файл не найден", 400
+        return "Файл не найден в запросе (ожидается поле zip_file)", 400
 
     zip_file = request.files["zip_file"]
 
     if zip_file.filename == "":
         return "Пустое имя файла", 400
 
-    # уникальное имя проекта
     project_id = str(uuid.uuid4())
-    project_path = os.path.join(DATA_DIR, project_id)
+    project_root = os.path.join(PROJECTS_DIR, project_id)
+    os.makedirs(project_root, exist_ok=True)
 
-    os.makedirs(project_path, exist_ok=True)
-
-    # путь к временному архиву
-    zip_path = os.path.join(project_path, "upload.zip")
+    zip_path = os.path.join(project_root, "upload.zip")
     zip_file.save(zip_path)
 
-    # распаковываем
     try:
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(project_path)
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall(project_root)
     except zipfile.BadZipFile:
-        return "Ошибка: загруженный файл не ZIP", 400
+        return "Ошибка: загруженный файл не является корректным ZIP-архивом", 400
+    finally:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
 
-    # удаляем архив
-    os.remove(zip_path)
+    register_project(project_root, zip_file.filename)
 
-    return f"Проект успешно загружен! ID: {project_id}"
+    return redirect(url_for("index"))
 
+
+@app.route("/projects/<project_id>/install", methods=["POST"])
+def install_requirements(project_id: str):
+    state = load_state()
+    project = next((p for p in state.get("projects", []) if p.get("id") == project_id), None)
+    if not project:
+        return f"Проект {project_id} не найден", 404
+
+    req_path = project.get("requirements")
+    if not req_path or not os.path.exists(req_path):
+        return "requirements.txt не найден для этого проекта", 400
+
+    venv_path = project.get("venv_path")
+    os.makedirs(os.path.dirname(venv_path), exist_ok=True)
+
+    try:
+        # создаём venv, если ещё нет
+        if not os.path.exists(venv_path):
+            subprocess.check_call(["python", "-m", "venv", venv_path])
+
+        pip_exe = os.path.join(venv_path, "bin", "pip")
+        if not os.path.exists(pip_exe):
+            # на всякий случай (Windows-путь, но в контейнере почти не нужен)
+            pip_exe = os.path.join(venv_path, "Scripts", "pip.exe")
+
+        subprocess.check_call([pip_exe, "install", "-r", req_path])
+
+        project["requirements_installed"] = True
+        project["last_error"] = None
+    except subprocess.CalledProcessError as e:
+        project["requirements_installed"] = False
+        project["last_error"] = f"Ошибка установки зависимостей: {e}"
+    except Exception as e:
+        project["requirements_installed"] = False
+        project["last_error"] = f"Неожиданная ошибка: {e}"
+
+    state["projects"] = [p if p.get("id") != project_id else project for p in state.get("projects", [])]
+    save_state(state)
+
+    return redirect(url_for("index"))
+
+
+@app.route("/health")
+def health():
+    return "ok"
