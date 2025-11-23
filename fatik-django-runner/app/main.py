@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 from typing import Optional, Dict, Any
+import signal
 
 app = Flask(__name__)
 
@@ -103,6 +104,22 @@ def register_project(root_dir: str, zip_filename: str) -> Dict[str, Any]:
     return project
 
 
+def stop_running_project(project):
+    """Останавливает gunicorn по PID."""
+    pid = project.get("run_pid")
+    if not pid:
+        return False
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except Exception as e:
+        project["last_error"] = f"Ошибка остановки: {e}"
+        return False
+
+    project["run_pid"] = None
+    project["is_running"] = False
+    return True
+
 # ---------- HTML-шаблон ----------
 
 INDEX_TEMPLATE = """
@@ -151,6 +168,13 @@ INDEX_TEMPLATE = """
             </form>
           {% endif %}
         </div>
+        <form action="{{ url_for('start_project', project_id=p.id) }}" method="post" style="margin-top:0.5rem;">
+          <button type="submit" {% if not p.manage_py or not p.requirements_installed %}disabled{% endif %}>Запустить</button>
+        </form>
+
+        <form action="{{ url_for('stop_project', project_id=p.id) }}" method="post" style="margin-top:0.3rem;">
+          <button type="submit" {% if not p.is_running %}disabled{% endif %}>Остановить</button>
+        </form>
       {% endfor %}
     {% endif %}
   </body>
@@ -238,7 +262,97 @@ def install_requirements(project_id: str):
 
     return redirect(url_for("index"))
 
+@app.route("/projects/<project_id>/stop", methods=["POST"])
+def stop_project(project_id):
+    state = load_state()
+    project = next((p for p in state["projects"] if p["id"] == project_id), None)
+    if not project:
+        return "Проект не найден", 404
+
+    stop_running_project(project)
+
+    save_state(state)
+    return redirect(url_for("index"))
+
+@app.route("/projects/<project_id>/start", methods=["POST"])
+def start_project(project_id):
+    state = load_state()
+    projects = state["projects"]
+    project = next((p for p in projects if p["id"] == project_id), None)
+
+    if not project:
+        return "Проект не найден", 404
+
+    manage_py = project.get("manage_py")
+    settings_module = project.get("settings_module")
+    venv_path = project.get("venv_path")
+    root_dir = project.get("root_dir")
+
+    if not manage_py or not settings_module:
+        project["last_error"] = "manage.py или settings не найдены"
+        save_state(state)
+        return redirect(url_for("index"))
+
+    # Останавливаем все другие проекты
+    for p in projects:
+        if p.get("is_running"):
+            stop_running_project(p)
+
+    # путь к wsgi.py
+    wsgi_path = find_first(root_dir, "wsgi.py")
+    if not wsgi_path:
+        project["last_error"] = "Не найден wsgi.py"
+        save_state(state)
+        return redirect(url_for("index"))
+
+    rel = os.path.relpath(wsgi_path, root_dir)
+    wsgi_module = rel.replace("/", ".").replace("\\", ".").replace(".py", "")
+
+    # путь к gunicorn
+    gunicorn_path = os.path.join(venv_path, "bin", "gunicorn")
+
+    if not os.path.exists(gunicorn_path):
+        project["last_error"] = "gunicorn не найден в venv"
+        save_state(state)
+        return redirect(url_for("index"))
+
+    # Формируем окружение
+    env = os.environ.copy()
+    env["DJANGO_SETTINGS_MODULE"] = settings_module
+
+    if project.get("env_file"):
+        try:
+            with open(project["env_file"], "r") as f:
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        env[k] = v
+        except Exception as e:
+            project["last_error"] = f"Ошибка чтения .env: {e}"
+
+    # Команда запуска gunicorn
+    cmd = [
+        gunicorn_path,
+        "--chdir", root_dir,
+        f"{wsgi_module}:application",
+        "-b", "0.0.0.0:9000",
+        "--workers", "3"
+    ]
+
+    try:
+        process = subprocess.Popen(cmd, env=env)
+        project["run_pid"] = process.pid
+        project["is_running"] = True
+        project["last_error"] = None
+    except Exception as e:
+        project["is_running"] = False
+        project["last_error"] = f"Ошибка запуска: {e}"
+
+    save_state(state)
+    return redirect(url_for("index"))
+
 
 @app.route("/health")
 def health():
     return "ok"
+
