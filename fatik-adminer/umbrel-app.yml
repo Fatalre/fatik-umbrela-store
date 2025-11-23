@@ -17,7 +17,7 @@ repo: https://github.com/vrana/adminer
 support: https://bitstudio.com.ua
 
 port: 8082
-icon: https://www.adminer.org/static/adminer-logo.png
+icon: https://www.adminer.org/static/images/logo.png
 
 gallery: []
 releaseNotes: ""
