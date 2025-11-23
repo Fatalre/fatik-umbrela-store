@@ -14,6 +14,8 @@ app = Flask(__name__)
 DATA_BASE_DIR = "/data"
 PROJECTS_DIR = os.path.join(DATA_BASE_DIR, "projects")
 STATE_FILE = os.path.join(DATA_BASE_DIR, "runner.json")
+LOGS_DIR = os.path.join(DATA_BASE_DIR, "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
 
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 
@@ -201,6 +203,9 @@ INDEX_TEMPLATE = """
         <form action="{{ url_for('stop_project', project_id=p.id) }}" method="post" style="margin-top:0.3rem;">
           <button type="submit" {% if not p.is_running %}disabled{% endif %}>Остановить</button>
         </form>
+
+        <div class="muted">Лог: {{ p.log_file or "ещё не создавался" }}</div>
+
       {% endfor %}
     {% endif %}
   </body>
@@ -338,7 +343,7 @@ def start_project(project_id):
     env = os.environ.copy()
     env["DJANGO_SETTINGS_MODULE"] = settings_module
 
-    # подхватываем .env, если есть
+    # .env
     if project.get("env_file"):
         try:
             with open(project["env_file"], "r") as f:
@@ -360,11 +365,14 @@ def start_project(project_id):
             env=env,
         )
     except subprocess.CalledProcessError as e:
-        # не валим запуск, но пишем в last_error
+        # не блокируем запуск, просто пишем ошибку
         project["last_error"] = f"collectstatic завершился с ошибкой: {e}"
 
     # ---- запуск gunicorn ----
     gunicorn_path = get_gunicorn_path(venv_path)
+
+    log_path = os.path.join(LOGS_DIR, f"{project_id}.log")
+    log_file = open(log_path, "a", buffering=1)  # line-buffered
 
     cmd = [
         gunicorn_path,
@@ -372,24 +380,24 @@ def start_project(project_id):
         f"{wsgi_module}:application",
         "-b", "0.0.0.0:9000",
         "--workers", "3",
+        "--log-file", "-",          # пишем лог в stdout
+        "--capture-output",         # и stdout/stderr тоже
     ]
 
     try:
-        process = subprocess.Popen(cmd, env=env)
+        process = subprocess.Popen(cmd, env=env, stdout=log_file, stderr=log_file)
         project["run_pid"] = process.pid
         project["is_running"] = True
-        # не затираем ошибку collectstatic, если была
+        project["log_file"] = log_path
+        # last_error не трогаем – там может быть collectstatic
     except Exception as e:
         project["is_running"] = False
         project["last_error"] = f"Ошибка запуска gunicorn: {e}"
 
-    # сохраняем состояние
     state["projects"] = [p if p.get("id") != project_id else project for p in projects]
     save_state(state)
 
     return redirect(url_for("index"))
-
-
 
 @app.route("/health")
 def health():
