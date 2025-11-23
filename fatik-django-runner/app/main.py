@@ -272,12 +272,12 @@ def install_requirements(project_id: str):
         if not os.path.exists(venv_path):
             subprocess.check_call(["python", "-m", "venv", venv_path])
 
-        pip_exe = os.path.join(venv_path, "bin", "pip")
-        if not os.path.exists(pip_exe):
-            # на всякий случай (Windows-путь, но в контейнере почти не нужен)
-            pip_exe = os.path.join(venv_path, "Scripts", "pip.exe")
+        python_exe = get_python_from_venv(venv_path)
 
-        subprocess.check_call([pip_exe, "install", "-r", req_path])
+        # ставим зависимости проекта
+        subprocess.check_call([python_exe, "-m", "pip", "install", "-r", req_path])
+        # и гарантируем gunicorn в этом же venv
+        subprocess.check_call([python_exe, "-m", "pip", "install", "gunicorn"])
 
         project["requirements_installed"] = True
         project["last_error"] = None
@@ -365,23 +365,21 @@ def start_project(project_id):
             env=env,
         )
     except subprocess.CalledProcessError as e:
-        # не блокируем запуск, просто пишем ошибку
         project["last_error"] = f"collectstatic завершился с ошибкой: {e}"
 
-    # ---- запуск gunicorn ----
-    gunicorn_path = get_gunicorn_path(venv_path)
-
+    # ---- запуск gunicorn через python -m gunicorn ----
     log_path = os.path.join(LOGS_DIR, f"{project_id}.log")
-    log_file = open(log_path, "a", buffering=1)  # line-buffered
+    log_file = open(log_path, "a", buffering=1)
 
     cmd = [
-        gunicorn_path,
+        python_exe,
+        "-m", "gunicorn",
         "--chdir", root_dir,
         f"{wsgi_module}:application",
         "-b", "0.0.0.0:9000",
         "--workers", "3",
-        "--log-file", "-",          # пишем лог в stdout
-        "--capture-output",         # и stdout/stderr тоже
+        "--log-file", "-",
+        "--capture-output",
     ]
 
     try:
@@ -389,7 +387,7 @@ def start_project(project_id):
         project["run_pid"] = process.pid
         project["is_running"] = True
         project["log_file"] = log_path
-        # last_error не трогаем – там может быть collectstatic
+        # last_error оставляем — там может быть collectstatic
     except Exception as e:
         project["is_running"] = False
         project["last_error"] = f"Ошибка запуска gunicorn: {e}"
