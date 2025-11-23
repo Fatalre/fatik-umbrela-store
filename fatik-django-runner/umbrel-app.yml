@@ -2,13 +2,18 @@ manifestVersion: 1
 id: fatik-django-runner
 name: Django Runner
 category: developer
-version: "1.0.8"
-tagline: Запуск своих Django-проектов на Umbrel
+version: "1.1.0"
+tagline: Run your Django projects on Umbrel
 description: >-
-  Локальный лончер для Django-проектов.
-  Пока что это минимальная версия, которая просто показывает
-  заглушку. Далее можно будет добавить загрузку ZIP, выбор проекта,
-  запуск/остановку и т.д.
+  A local Django project launcher for Umbrel.  
+  This app allows you to upload Django projects as ZIP archives, automatically
+  unpack them, detect manage.py, settings.py, .env and requirements.txt, and
+  install project dependencies inside an isolated virtual environment.
+  You can start and stop any project, view its real-time logs, see the running
+  process PID and uptime, switch between projects, and delete unused ones
+  together with their virtual environments and logs.
+  Designed to make running multiple Django applications on Umbrel easy and
+  user-friendly.
 
 developer: Fatalre
 website: https://bitstudio.com.ua
@@ -16,6 +21,7 @@ repo: ""
 support: https://bitstudio.com.ua
 
 port: 8000
+icon: https://i.postimg.cc/dVjTGXBN/123.png
 gallery: []
 releaseNotes: ""
 dependencies: []
