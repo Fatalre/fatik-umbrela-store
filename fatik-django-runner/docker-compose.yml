@@ -9,7 +9,7 @@ services:
       APP_PORT: 8000
 
   web:
-    image: fatik/django-runner
+    image: fatalre/django-runner:1.0.0@sha256:e690ae8cd3dbad4d06f5886ec0186ca1cc89a075d7ac60c115739057d462c519
     restart: on-failure
     stop_grace_period: 1m
     volumes:
