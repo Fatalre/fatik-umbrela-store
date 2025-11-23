@@ -324,6 +324,9 @@ def start_project(project_id):
         save_state(state)
         return redirect(url_for("index"))
 
+    # директория, где лежит manage.py (django-проектный корень)
+    project_base = os.path.dirname(manage_py)
+
     # Останавливаем все другие проекты
     for p in projects:
         if p.get("is_running"):
@@ -336,7 +339,8 @@ def start_project(project_id):
         save_state(state)
         return redirect(url_for("index"))
 
-    rel = os.path.relpath(wsgi_path, root_dir)
+    # считаем путь к wsgi относительно project_base (а не root_dir)
+    rel = os.path.relpath(wsgi_path, project_base)
     wsgi_module = rel.replace("/", ".").replace("\\", ".").replace(".py", "")
 
     # Окружение
@@ -361,7 +365,7 @@ def start_project(project_id):
     try:
         subprocess.check_call(
             [python_exe, os.path.basename(manage_py), "collectstatic", "--noinput"],
-            cwd=os.path.dirname(manage_py),
+            cwd=project_base,          # ВАЖНО: там, где manage.py
             env=env,
         )
     except subprocess.CalledProcessError as e:
@@ -374,7 +378,7 @@ def start_project(project_id):
     cmd = [
         python_exe,
         "-m", "gunicorn",
-        "--chdir", root_dir,
+        "--chdir", project_base,          # ВАЖНО: туда же, где manage.py
         f"{wsgi_module}:application",
         "-b", "0.0.0.0:9000",
         "--workers", "3",
@@ -387,7 +391,6 @@ def start_project(project_id):
         project["run_pid"] = process.pid
         project["is_running"] = True
         project["log_file"] = log_path
-        # last_error оставляем — там может быть collectstatic
     except Exception as e:
         project["is_running"] = False
         project["last_error"] = f"Ошибка запуска gunicorn: {e}"
