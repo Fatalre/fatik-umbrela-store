@@ -1,0 +1,24 @@
+manifestVersion: 1
+id: fatik-django-runner
+name: Django Runner
+category: developer
+version: "1.0.0"
+tagline: Запуск своих Django-проектов на Umbrel
+description: >-
+  Локальный лончер для Django-проектов.
+  Пока что это минимальная версия, которая просто показывает
+  заглушку. Далее можно будет добавить загрузку ZIP, выбор проекта,
+  запуск/остановку и т.д.
+
+developer: Fatalre
+website: https://bitstudio.com.ua
+repo: ""
+support: https://bitstudio.com.ua
+
+port: 8000
+gallery: []
+releaseNotes: ""
+dependencies: []
+path: ""
+submitter: Fatalre
+submission: https://github.com/Fatalre/fatik-umbrela-store.git
