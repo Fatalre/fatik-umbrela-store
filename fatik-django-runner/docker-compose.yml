@@ -12,6 +12,8 @@ services:
     image: fatalre/django-runner:1.0.0@sha256:4358ba393a99a27414e5bb9284e965261e167001630f7a17bf574d59b14c87f1
     restart: on-failure
     stop_grace_period: 1m
+    ports:
+      - "9000:9000"
     volumes:
       # здесь будут лежать проекты, venv’ы и прочие данные
       - ${APP_DATA_DIR}/data:/data
