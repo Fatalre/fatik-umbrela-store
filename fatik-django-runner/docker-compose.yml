@@ -9,7 +9,7 @@ services:
       APP_PORT: 8000
 
   web:
-    image: fatalre/django-runner:1.0.0@sha256:9d36c38e3e486df5ed785be627c60ee18b69356d314f8c58850eebb4f5763815
+    image: fatalre/django-runner:1.0.0@sha256:4358ba393a99a27414e5bb9284e965261e167001630f7a17bf574d59b14c87f1
     restart: on-failure
     stop_grace_period: 1m
     volumes:

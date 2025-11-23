@@ -120,6 +120,32 @@ def stop_running_project(project):
     project["is_running"] = False
     return True
 
+
+def get_python_from_venv(venv_path: str) -> str:
+    """Возвращает python из venv, если есть, иначе системный python."""
+    if venv_path:
+        cand = os.path.join(venv_path, "bin", "python")
+        if os.path.exists(cand):
+            return cand
+        # на всякий случай виндовый вариант (в контейнере не нужен, но не мешает)
+        cand_win = os.path.join(venv_path, "Scripts", "python.exe")
+        if os.path.exists(cand_win):
+            return cand_win
+    return "python"
+
+
+def get_gunicorn_path(venv_path: str) -> str:
+    """Предпочитаем gunicorn из venv, иначе - системный."""
+    if venv_path:
+        cand = os.path.join(venv_path, "bin", "gunicorn")
+        if os.path.exists(cand):
+            return cand
+        cand_win = os.path.join(venv_path, "Scripts", "gunicorn.exe")
+        if os.path.exists(cand_win):
+            return cand_win
+    # fallback: глобальный gunicorn, установлен в образе
+    return "gunicorn"
+
 # ---------- HTML-шаблон ----------
 
 INDEX_TEMPLATE = """
@@ -277,8 +303,8 @@ def stop_project(project_id):
 @app.route("/projects/<project_id>/start", methods=["POST"])
 def start_project(project_id):
     state = load_state()
-    projects = state["projects"]
-    project = next((p for p in projects if p["id"] == project_id), None)
+    projects = state.get("projects", [])
+    project = next((p for p in projects if p.get("id") == project_id), None)
 
     if not project:
         return "Проект не найден", 404
@@ -308,48 +334,61 @@ def start_project(project_id):
     rel = os.path.relpath(wsgi_path, root_dir)
     wsgi_module = rel.replace("/", ".").replace("\\", ".").replace(".py", "")
 
-    # путь к gunicorn
-    gunicorn_path = os.path.join(venv_path, "bin", "gunicorn")
-
-    if not os.path.exists(gunicorn_path):
-        project["last_error"] = "gunicorn не найден в venv"
-        save_state(state)
-        return redirect(url_for("index"))
-
-    # Формируем окружение
+    # Окружение
     env = os.environ.copy()
     env["DJANGO_SETTINGS_MODULE"] = settings_module
 
+    # подхватываем .env, если есть
     if project.get("env_file"):
         try:
             with open(project["env_file"], "r") as f:
                 for line in f:
-                    if "=" in line:
-                        k, v = line.strip().split("=", 1)
-                        env[k] = v
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    env[k] = v
         except Exception as e:
             project["last_error"] = f"Ошибка чтения .env: {e}"
 
-    # Команда запуска gunicorn
+    # ---- collectstatic ----
+    python_exe = get_python_from_venv(venv_path)
+    try:
+        subprocess.check_call(
+            [python_exe, os.path.basename(manage_py), "collectstatic", "--noinput"],
+            cwd=os.path.dirname(manage_py),
+            env=env,
+        )
+    except subprocess.CalledProcessError as e:
+        # не валим запуск, но пишем в last_error
+        project["last_error"] = f"collectstatic завершился с ошибкой: {e}"
+
+    # ---- запуск gunicorn ----
+    gunicorn_path = get_gunicorn_path(venv_path)
+
     cmd = [
         gunicorn_path,
         "--chdir", root_dir,
         f"{wsgi_module}:application",
         "-b", "0.0.0.0:9000",
-        "--workers", "3"
+        "--workers", "3",
     ]
 
     try:
         process = subprocess.Popen(cmd, env=env)
         project["run_pid"] = process.pid
         project["is_running"] = True
-        project["last_error"] = None
+        # не затираем ошибку collectstatic, если была
     except Exception as e:
         project["is_running"] = False
-        project["last_error"] = f"Ошибка запуска: {e}"
+        project["last_error"] = f"Ошибка запуска gunicorn: {e}"
 
+    # сохраняем состояние
+    state["projects"] = [p if p.get("id") != project_id else project for p in projects]
     save_state(state)
+
     return redirect(url_for("index"))
+
 
 
 @app.route("/health")
