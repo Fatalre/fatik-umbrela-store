@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Ставим зависимости для панели (потом сюда добавим ещё, если потребуется)
-RUN pip install --no-cache-dir flask gunicorn
+RUN pip install --no-cache-dir flask gunicorn requests
 
 # Создаём директории
 RUN mkdir -p /app /data/projects /data/venvs

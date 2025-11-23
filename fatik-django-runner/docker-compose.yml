@@ -9,11 +9,11 @@ services:
       APP_PORT: 8000
 
   web:
-    image: fatalre/django-runner:1.0.0@sha256:ac9413c51f9b718a610b0db3fd4ab08cc095c42604f7e9972f09f2cb0e2c19e7
+    image: fatalre/django-runner:1.0.0@sha256:bfc4de3630ec0ecef0b21dfbd1da20db1c115fd3cf5e30b62d1fe3ebb1d03795
     restart: on-failure
     stop_grace_period: 1m
-    ports:
-      - "9000:9000"
+#    ports:
+#      - "9000:9000"
     volumes:
       # здесь будут лежать проекты, venv’ы и прочие данные
       - ${APP_DATA_DIR}/data:/data

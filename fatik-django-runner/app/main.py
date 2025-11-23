@@ -10,6 +10,8 @@ import errno
 import time
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+import requests
+from flask import stream_with_context
 
 app = Flask(__name__)
 
@@ -20,6 +22,7 @@ VENVS_DIR = os.path.join(DATA_BASE_DIR, "venvs")
 LOGS_DIR = os.path.join(DATA_BASE_DIR, "logs")
 STATE_FILE = os.path.join(DATA_BASE_DIR, "runner.json")
 DJANGO_PORT = 9000
+INTERNAL_PORT_RANGE = range(9101, 9151)
 
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 os.makedirs(VENVS_DIR, exist_ok=True)
@@ -111,6 +114,9 @@ def register_project(root_dir: str, zip_filename: str) -> Dict[str, Any]:
     project_id = os.path.basename(root_dir)
     venv_path = os.path.join(VENVS_DIR, project_id)
 
+    state = load_state()
+    port = assign_port(state)   # <-- сначала берём свободный порт
+
     project = {
         "id": project_id,
         "name": project_name,
@@ -123,18 +129,17 @@ def register_project(root_dir: str, zip_filename: str) -> Dict[str, Any]:
         "requirements_installed": False,
         "last_error": None,
         "run_pid": None,
+        "port": port,            # <-- теперь переменная уже есть
         "is_running": False,
-        "started_at": None,  # timestamp запуска
+        "started_at": None,
         "log_file": os.path.join(LOGS_DIR, f"{project_id}.log"),
     }
 
-    state = load_state()
     state["projects"] = [p for p in state["projects"] if p.get("id") != project_id]
     state["projects"].append(project)
     save_state(state)
 
     return project
-
 
 def stop_running_project(project: Dict[str, Any]) -> bool:
     pid = project.get("run_pid")
@@ -170,6 +175,13 @@ def format_uptime(seconds: float) -> str:
     days, hours = divmod(hours, 24)
     return f"{days} d {hours} h"
 
+
+def assign_port(state: Dict[str, Any]) -> int:
+    used = {p.get("port") for p in state.get("projects", []) if p.get("port")}
+    for port in INTERNAL_PORT_RANGE:
+        if port not in used:
+            return port
+    raise RuntimeError("No free ports for projects")
 # ---------- Шаблон ----------
 
 INDEX_TEMPLATE = """
@@ -442,7 +454,7 @@ INDEX_TEMPLATE = """
                 </form>
 
                 <a class="btn-secondary"
-                   href="http://{{ request_host }}:{{ django_port }}/"
+                   href="{{ url_for('proxy_project', project_id=p.id) }}"
                    target="_blank"
                    rel="noopener noreferrer">
                   Go to Django
@@ -469,7 +481,7 @@ INDEX_TEMPLATE = """
           {% endfor %}
         </div>
         <div class="hint">
-          Tip: Only one project can be launched at a time. When a new one is launched, the old one will be stopped.
+          Tip: Each project runs on its own internal port and can work in parallel with others.
         </div>
       {% endif %}
     </div>
@@ -723,9 +735,9 @@ def start_project(project_id):
     project_base = os.path.dirname(manage_py)
 
     # Останавливаем все другие проекты
-    for p in projects:
-        if p.get("id") != project_id and p.get("is_running"):
-            stop_running_project(p)
+#     for p in projects:
+#         if p.get("id") != project_id and p.get("is_running"):
+#             stop_running_project(p)
 
     # путь к wsgi.py
     wsgi_path = find_first(root_dir, "wsgi.py")
@@ -769,12 +781,14 @@ def start_project(project_id):
     project["log_file"] = log_path
     log_file = open(log_path, "a", buffering=1)
 
+    port = int(project.get("port") or 0)
+
     cmd = [
         python_exe,
         "-m", "gunicorn",
         "--chdir", project_base,
         f"{wsgi_module}:application",
-        "-b", f"0.0.0.0:{DJANGO_PORT}",
+        "-b", f"127.0.0.1:{port}",   # слушаем только на localhost внутри контейнера
         "--workers", "3",
         "--log-file", "-",
         "--capture-output",
@@ -856,6 +870,50 @@ def logs_tail(project_id: str):
 
     text = tail_file(project.get("log_file"), lines=lines_int)
     return Response(text, mimetype="text/plain")
+
+def get_project(state: Dict[str, Any], project_id: str) -> Optional[Dict[str, Any]]:
+    return next((p for p in state.get("projects", []) if p.get("id") == project_id), None)
+
+
+@app.route("/project/<project_id>/", defaults={"path": ""}, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+@app.route("/project/<project_id>/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+def proxy_project(project_id: str, path: str):
+    state = load_state()
+    project = get_project(state, project_id)
+    if not project:
+        return Response("Project not found\n", status=404, mimetype="text/plain")
+    if not project.get("is_running"):
+        return Response("Project is not running\n", status=502, mimetype="text/plain")
+
+    port = int(project.get("port"))
+    target_url = f"http://127.0.0.1:{port}/" + path
+
+    # копируем заголовки, кроме Host и длины
+    headers = {k: v for k, v in request.headers if k.lower() not in ("host", "content-length")}
+    try:
+        resp = requests.request(
+            method=request.method,
+            url=target_url,
+            headers=headers,
+            params=request.args,
+            data=request.get_data(),
+            cookies=request.cookies,
+            allow_redirects=False,
+            stream=True,
+        )
+    except requests.RequestException as e:
+        return Response(f"Upstream error: {e}\n", status=502, mimetype="text/plain")
+
+    excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+    response_headers = [(name, value) for name, value in resp.headers.items()
+                        if name.lower() not in excluded]
+
+    return Response(
+        stream_with_context(resp.iter_content(chunk_size=8192)),
+        status=resp.status_code,
+        headers=response_headers,
+    )
+
 
 @app.route("/health")
 def health():
