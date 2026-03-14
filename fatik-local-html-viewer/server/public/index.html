@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local HTML Viewer</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div>
+        <h1>Local HTML Viewer</h1>
+        <p>Projects with locally stored HTML pages</p>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>Create project</h2>
+      <div class="row">
+        <input id="new-project-name" type="text" placeholder="Example: wikipedia-save" />
+        <button id="create-project-btn">Create</button>
+      </div>
+    </section>
+
+    <main class="layout">
+      <section class="card left">
+        <div class="section-header">
+          <h2>Projects</h2>
+          <button id="refresh-projects-btn" class="secondary">Update</button>
+        </div>
+        <div id="projects-list" class="projects-list"></div>
+      </section>
+
+      <section class="card right">
+        <div id="project-empty" class="muted">
+          Select a project on the left
+        </div>
+
+        <div id="project-panel" class="hidden">
+          <div class="section-header">
+            <h2 id="project-title"></h2>
+            <div class="inline-actions">
+              <a id="open-project-link" class="button-link" href="#" target="_blank">Open</a>
+              <a id="download-project-link" class="button-link secondary-link" href="#">Download ZIP</a>
+            </div>
+          </div>
+
+          <div class="meta-grid">
+            <div class="card inset">
+              <h3>Rename project</h3>
+              <div class="row">
+                <input id="rename-project-input" type="text" placeholder="New name" />
+                <button id="rename-project-btn">Rename</button>
+              </div>
+            </div>
+
+            <div class="card inset">
+              <h3>Select the main HTML</h3>
+              <div class="row">
+                <select id="main-file-select"></select>
+                <button id="save-main-file-btn">Save</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="upload-grid">
+            <div class="card inset">
+              <h3>Folder upload</h3>
+              <p class="muted small">
+                Select the folder where the saved page and all its resources are located.
+              </p>
+              <input id="folder-input" type="file" webkitdirectory directory multiple />
+              <button id="upload-folder-btn">Upload folder</button>
+            </div>
+
+            <div class="card inset">
+              <h3>Upload ZIP</h3>
+              <p class="muted small">
+                You can download a ZIP file containing the complete project file structure.
+              </p>
+              <input id="zip-input" type="file" accept=".zip" />
+              <button id="upload-zip-btn">Upload ZIP</button>
+            </div>
+          </div>
+
+          <div class="card inset danger-zone">
+            <h3>Delete project</h3>
+            <p class="muted small">
+              Deletes the entire project folder, including all files.
+            </p>
+            <button id="delete-project-btn" class="danger">Delete project</button>
+          </div>
+
+          <div class="card inset">
+            <div class="section-header">
+              <h3>Projects files</h3>
+            </div>
+            <div id="files-list" class="files-list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

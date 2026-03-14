@@ -1,0 +1,16 @@
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: local-html-viewer_server_1
+      APP_PORT: 3000
+
+  server:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DATA_DIR: /data
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
