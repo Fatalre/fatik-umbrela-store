@@ -3,11 +3,12 @@ version: "3.7"
 services:
   app_proxy:
     environment:
-      APP_HOST: local-html-viewer_server_1
+      APP_HOST: server
       APP_PORT: 3000
 
   server:
-    build: ./server
+    build:
+      context: ./server
     restart: unless-stopped
     environment:
       PORT: 3000

@@ -1,7 +1,7 @@
 manifestVersion: 1
 id: fatik-local-html-viewer
 name: Local HTML Viewer
-category: files
+category: developer
 version: "2.0.0"
 tagline: View locally saved HTML pages by project
 description: >-
