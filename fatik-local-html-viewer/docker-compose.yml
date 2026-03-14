@@ -7,9 +7,7 @@ services:
       - server
 
   server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
+    image: fatalre/fatik-local-html-viewer:2.0.1@sha256:6e5e1d5422ab454c696a4c8d967ef5279486b62e382d7ef4e42a75d624fa27b6
     restart: unless-stopped
     environment:
       PORT: 3000
