@@ -2,17 +2,16 @@ manifestVersion: 1
 id: fatik-local-html-viewer
 name: Local HTML Viewer
 category: developer
-version: "2.0.0"
+version: "2.0.1"
 tagline: View locally saved HTML pages by project
 description: >-
-  An UmbrelOS app that stores projects with locally saved
-  HTML pages. Each project resides in its own folder. You can import
-  folders or ZIP archives, select a main HTML file, view the list
-  of files, and rename or delete projects.
+  An UmbrelOS app that stores projects with locally saved HTML pages.
+  Each project resides in its own folder. You can import folders or ZIP archives,
+  select a main HTML file, browse files, and manage projects.
 
 developer: Fatalre
 website: https://bitstudio.com.ua
-repo: https://example.com/local-html-viewer
+repo: https://github.com/Fatalre/fatik-umbrela-store
 support: https://bitstudio.com.ua
 
 port: 3000
@@ -20,15 +19,11 @@ icon: https://play-lh.googleusercontent.com/atGONXqzf-FUn_hcMjNaSvqqqdOBaz01-qyE
 
 gallery: []
 releaseNotes: >-
-  Version 2.0.0:
-  - Import folders
-  - Import ZIP files
-  - Rename projects
-  - Select main HTML file
-  - File list
+  Version 2.0.1:
+  - install compatibility fixes
 dependencies: []
 path: ""
 defaultUsername: ""
 defaultPassword: ""
 submitter: Fatalre
-submission: https://github.com/Fatalre/fatik-umbrela-store.git
+submission: https://github.com/Fatalre/fatik-umbrela-store

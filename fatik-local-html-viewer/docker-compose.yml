@@ -3,12 +3,15 @@ version: "3.7"
 services:
   app_proxy:
     environment:
-      APP_HOST: server
+      APP_HOST: fatik-local-html-viewer_server_1
       APP_PORT: 3000
+    depends_on:
+      - server
 
   server:
     build:
       context: ./server
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       PORT: 3000
