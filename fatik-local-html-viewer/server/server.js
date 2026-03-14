@@ -415,7 +415,7 @@ app.get("/api/projects/:name/download", (req, res) => {
   }
 });
 
-app.get("/view/:name", (req, res) => {
+/*app.get("/view/:name", (req, res) => {
   try {
     const name = safeName(req.params.name);
     if (!name) throw new Error("Invalid project name");
@@ -436,9 +436,9 @@ app.get("/view/:name", (req, res) => {
   } catch (err) {
     res.status(404).send(err.message);
   }
-});
+});*/
 
-app.get("/project-files/:name/*", (req, res) => {
+/*app.get("/project-files/:name/*", (req, res) => {
   try {
     const name = safeName(req.params.name);
     if (!name) throw new Error("Invalid project name");
@@ -453,6 +453,57 @@ app.get("/project-files/:name/*", (req, res) => {
 
     if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
       return res.status(404).send("File not found");
+    }
+
+    res.sendFile(target);
+  } catch (err) {
+    res.status(404).send(err.message);
+  }
+});*/
+
+app.get("/view/:name", (req, res) => {
+  try {
+    const name = safeName(req.params.name);
+    if (!name) throw new Error("Invalid project name");
+
+    const dir = ensureProjectExists(name);
+    const meta = getProjectMeta(dir);
+    const mainFile = (meta.mainFile || "index.html").replace(/\\/g, "/");
+
+    const target = path.join(dir, mainFile);
+    if (!ensureInsideOrEqual(dir, target)) {
+      throw new Error("Unsafe path");
+    }
+
+    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+      return res.status(404).send("Main HTML file not found");
+    }
+
+    return res.redirect(`/project/${encodeURIComponent(name)}/${mainFile}`);
+  } catch (err) {
+    res.status(404).send(err.message);
+  }
+});
+
+app.get("/project/:name/*", (req, res) => {
+  try {
+    const name = safeName(req.params.name);
+    if (!name) throw new Error("Invalid project name");
+
+    const dir = ensureProjectExists(name);
+    const rel = decodeURIComponent(req.params[0] || "").replace(/\\/g, "/");
+    const target = path.join(dir, rel);
+
+    if (!ensureInsideOrEqual(dir, target)) {
+      throw new Error("Unsafe path");
+    }
+
+    if (!fs.existsSync(target)) {
+      return res.status(404).send("File not found");
+    }
+
+    if (fs.statSync(target).isDirectory()) {
+      return res.status(403).send("Directory listing is not allowed");
     }
 
     res.sendFile(target);

@@ -137,7 +137,7 @@ function renderFiles(files) {
     const size = f.type === "file" ? formatBytes(f.size) : "folder";
     const preview =
       f.type === "file" && f.path.toLowerCase().endsWith(".html")
-        ? `<a class="mini-link" target="_blank" href="/project-files/${encodeURIComponent(selectedProject)}/${encodeURIComponent(f.path)}">открыть файл</a>`
+        ? `<a class="mini-link" target="_blank" href="/project/${encodeURIComponent(selectedProject)}/${f.path.split('/').map(encodeURIComponent).join('/')}">открыть файл</a>`
         : "";
 
     return `
