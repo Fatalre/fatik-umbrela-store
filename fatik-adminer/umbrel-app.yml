@@ -2,7 +2,7 @@ manifestVersion: 1
 id: fatik-adminer
 name: Adminer
 category: developer
-version: "1.0.4"
+version: "1.0.5"
 tagline: Lightweight web database manager
 description: >-
   Adminer + MariaDB in a single Umbrel application.
@@ -22,6 +22,7 @@ icon: https://imgpx.com/ZpVD5DwHEVaW.webp
 gallery:
   - 1.jpg
   - 2.jpg
+  - 3.jpg
 releaseNotes: ""
 dependencies: []
 path: ""
