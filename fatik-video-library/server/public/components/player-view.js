@@ -1,7 +1,109 @@
 import { api } from "../api.js";
 import { renderEmptyState } from "./empty-state.js";
 import { renderBreadcrumb } from "./breadcrumb.js";
+import { renderQualitySelector } from "./quality-selector.js";
 import { formatBytes, formatDuration, formatResolution, escapeHtml } from "../utils.js";
+
+function getSavedQuality(itemId) {
+    return localStorage.getItem(`fatik-video-library:quality:${itemId}`) || "original";
+}
+
+function saveQuality(itemId, value) {
+    localStorage.setItem(`fatik-video-library:quality:${itemId}`, value);
+}
+
+async function ensureHlsBuilt(itemId) {
+    await api.buildHls(itemId);
+    return api.getHlsMasterUrl(itemId);
+}
+
+async function attachSource(video, item, quality) {
+    const currentTime = video.currentTime || 0;
+    const wasPaused = video.paused;
+
+    if (video._hlsInstance) {
+        video._hlsInstance.destroy();
+        video._hlsInstance = null;
+    }
+
+    if (quality === "original") {
+        video.src = api.getOriginalStreamUrl(item.id);
+        video.load();
+
+        video.addEventListener(
+            "loadedmetadata",
+            () => {
+                if (currentTime > 0 && Number.isFinite(currentTime)) {
+                    video.currentTime = currentTime;
+                }
+            },
+            { once: true }
+        );
+
+        if (!wasPaused) {
+            video.play().catch(() => {});
+        }
+
+        return;
+    }
+
+    const masterUrl = await ensureHlsBuilt(item.id);
+
+    if (window.Hls && window.Hls.isSupported()) {
+        const hls = new window.Hls();
+        video._hlsInstance = hls;
+
+        hls.loadSource(masterUrl);
+        hls.attachMedia(video);
+
+        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+            const levels = hls.levels || [];
+
+            const qualityIndex = levels.findIndex((level) => {
+                return `${level.height}p` === quality;
+            });
+
+            if (qualityIndex >= 0) {
+                hls.currentLevel = qualityIndex;
+                hls.nextLevel = qualityIndex;
+                hls.loadLevel = qualityIndex;
+            }
+
+            if (currentTime > 0 && Number.isFinite(currentTime)) {
+                video.currentTime = currentTime;
+            }
+
+            if (!wasPaused) {
+                video.play().catch(() => {});
+            }
+        });
+
+        return;
+    }
+
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = masterUrl;
+        video.load();
+
+        video.addEventListener(
+            "loadedmetadata",
+            () => {
+                if (currentTime > 0 && Number.isFinite(currentTime)) {
+                    video.currentTime = currentTime;
+                }
+            },
+            { once: true }
+        );
+
+        if (!wasPaused) {
+            video.play().catch(() => {});
+        }
+
+        return;
+    }
+
+    throw new Error("HLS playback is not supported in this browser");
+}
 
 export async function renderPlayerPage(appRoot, itemId) {
     const pageRoot = document.getElementById("page-root");
@@ -10,7 +112,7 @@ export async function renderPlayerPage(appRoot, itemId) {
     try {
         const item = await api.getItem(itemId);
         const metadata = item.metadata || {};
-        const streamUrl = api.getOriginalStreamUrl(item.id);
+        const selectedQuality = getSavedQuality(item.id);
 
         pageRoot.innerHTML = `
       ${renderBreadcrumb(item.parentPath || "")}
@@ -22,7 +124,6 @@ export async function renderPlayerPage(appRoot, itemId) {
             class="video-element"
             controls
             preload="metadata"
-            src="${streamUrl}"
           ></video>
         </div>
 
@@ -39,9 +140,11 @@ export async function renderPlayerPage(appRoot, itemId) {
             <div><strong>Size:</strong> ${formatBytes(item.sizeBytes || 0)}</div>
           </div>
 
+          ${renderQualitySelector(selectedQuality)}
+
           <div class="actions-row">
             <button id="watched-button" class="secondary-button" type="button">
-              Mark as watched
+              ${item.state?.watched ? "Watched" : "Mark as watched"}
             </button>
             <a class="secondary-button" href="#/folder/${encodeURIComponent(item.parentPath || "")}">
               Back to folder
@@ -53,6 +156,9 @@ export async function renderPlayerPage(appRoot, itemId) {
 
         const video = document.getElementById("video-player");
         const watchedButton = document.getElementById("watched-button");
+        const qualitySelect = document.getElementById("quality-select");
+
+        await attachSource(video, item, selectedQuality);
 
         watchedButton?.addEventListener("click", async () => {
             try {
@@ -61,6 +167,20 @@ export async function renderPlayerPage(appRoot, itemId) {
                 watchedButton.disabled = true;
             } catch (error) {
                 alert(error.message);
+            }
+        });
+
+        qualitySelect?.addEventListener("change", async (event) => {
+            const quality = event.target.value;
+            saveQuality(item.id, quality);
+
+            qualitySelect.disabled = true;
+            try {
+                await attachSource(video, item, quality);
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                qualitySelect.disabled = false;
             }
         });
 

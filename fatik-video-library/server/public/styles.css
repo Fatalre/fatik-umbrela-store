@@ -324,3 +324,19 @@ a {
         grid-template-columns: 1fr;
     }
 }
+
+.quality-select {
+    width: 100%;
+    margin-top: 6px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    outline: none;
+}
+
+.quality-select:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}

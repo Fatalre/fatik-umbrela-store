@@ -46,11 +46,11 @@ function buildMasterPlaylist(item) {
         }
     ].filter((variant) => fs.existsSync(path.join(itemDir, variant.file)));
 
-    const lines = ["#EXTM3U"];
+    const lines = ["#EXTM3U", "#EXT-X-VERSION:3"];
 
     for (const variant of variants) {
         lines.push(
-            `#EXT-X-STREAM-INF:BANDWIDTH=${variant.bandwidth},RESOLUTION=${variant.resolution},NAME="${variant.name}"`
+            `#EXT-X-STREAM-INF:BANDWIDTH=${variant.bandwidth},RESOLUTION=${variant.resolution}`
         );
         lines.push(`/api/hls/${item.id}/${variant.file}`);
     }
