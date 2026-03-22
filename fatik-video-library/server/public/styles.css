@@ -447,3 +447,19 @@ a {
         width: 100%;
     }
 }
+
+.video-element {
+    width: 100%;
+    height: auto;
+    max-height: 70vh;
+    background: black;
+    border-radius: 14px;
+}
+
+.player-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    overflow: hidden;
+}
