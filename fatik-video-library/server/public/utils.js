@@ -44,3 +44,13 @@ export function formatResolution(resolution) {
 
     return `${resolution.width}×${resolution.height}`;
 }
+
+export function parseEpisodeInfo(text = "") {
+    const match = String(text).match(/S(\d{1,2})E(\d{1,2})/i);
+    if (!match) return null;
+
+    return {
+        season: Number(match[1]),
+        episode: Number(match[2])
+    };
+}

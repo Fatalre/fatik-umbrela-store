@@ -2,15 +2,18 @@ manifestVersion: 1
 id: fatik-video-library
 name: Video Library
 tagline: Folder-based video library for Umbrel
-icon: icon.svg
 category: media
-version: "0.1.7"
+version: "0.1.8"
 
 port: 3000
+icon: https://imgpx.com/VipaEh1CFabS.webp
 
 description: >-
-  A modern folder-based video library for Umbrel with tree navigation,
-  online playback, posters, and human-friendly quality selection.
+  A modern folder-based video library for Umbrel with real folder tree navigation,
+  clean browsing for movies and series, poster generation, online playback,
+  continue watching, resume from last position, watched tracking, external subtitles,
+  series-aware episode views, and human-friendly quality selection for both original
+  and streaming-ready playback.
 
 developer: Fatalre
 website: https://bitstudio.com.ua
