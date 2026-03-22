@@ -5,12 +5,11 @@ services:
     environment:
       APP_HOST: fatik-video-library_server_1
       APP_PORT: 3000
-    depends_on:
-      - server
 
   server:
     image: fatalre/fatik-video-library:0.1.0
-    restart: unless-stopped
+    restart: on-failure
+    stop_grace_period: 1m
     environment:
       PORT: 3000
       NODE_ENV: production
