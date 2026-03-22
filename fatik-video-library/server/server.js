@@ -57,14 +57,14 @@ app.use((req, res, next) => {
 app.use("/assets", express.static(path.join(__dirname, "public", "assets")));
 
 async function findItemOrRefresh(itemId) {
-    let item = await findItemOrRefresh(itemId);
+    let item = await findItemById(itemId);
 
     if (item) {
         return item;
     }
 
     await buildLibraryTree({ forceRefresh: true });
-    item = await findItemOrRefresh(itemId);
+    item = await findItemById(itemId);
 
     return item;
 }
