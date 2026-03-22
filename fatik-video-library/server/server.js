@@ -643,6 +643,7 @@ app.post("/api/hls-by-path/build", async (req, res) => {
             playlistUrl: `/api/hls-by-path/playlist?path=${encodeURIComponent(relativePath)}&quality=${encodeURIComponent(quality)}`
         });
     } catch (error) {
+
         sendError(res, 500, "Failed to build HLS", error.message);
     }
 });
@@ -702,6 +703,7 @@ app.get("/api/hls-by-path/file", async (req, res) => {
 
         res.sendFile(filePath);
     } catch (error) {
+        console.log("HLS BUILD ERROR:", error);
         sendError(res, 500, "Failed to serve HLS file", error.message);
     }
 });
