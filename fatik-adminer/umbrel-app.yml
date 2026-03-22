@@ -2,7 +2,7 @@ manifestVersion: 1
 id: fatik-adminer
 name: Adminer
 category: developer
-version: "1.0.5"
+version: "1.0.6"
 tagline: Lightweight web database manager
 description: >-
   Adminer + MariaDB in a single Umbrel application.
@@ -20,9 +20,9 @@ port: 8082
 icon: https://imgpx.com/ZpVD5DwHEVaW.webp
 
 gallery:
-  - 1.jpg
-  - 2.jpg
-  - 3.jpg
+  - fatik-adminer-1.jpg
+  - fatik-adminer-2.jpg
+  - fatik-adminer-3.jpg
 releaseNotes: ""
 dependencies: []
 path: ""
