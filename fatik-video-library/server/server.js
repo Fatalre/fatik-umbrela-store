@@ -1,0 +1,363 @@
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
+
+const { config, ensureAppDirectories } = require("./lib/config");
+const {
+    buildLibraryTree,
+    listFolderContents,
+    findItemById,
+    searchItems
+} = require("./lib/scan");
+const {
+    getLocalVideoMetadata
+} = require("./lib/metadata");
+const {
+    ensurePosterForItem,
+    getPosterPathForItem
+} = require("./lib/posters");
+const {
+    loadDatabase,
+    saveDatabase,
+    getItemState,
+    updateItemState
+} = require("./lib/db");
+const {
+    sendJson,
+    sendError,
+    parseBoolean
+} = require("./lib/api-utils");
+const {
+    getSafeLibraryAbsolutePath
+} = require("./lib/paths");
+const {
+    getMimeType
+} = require("./lib/mime");
+const {
+    ensureHlsForItem,
+    getHlsMasterPath,
+    getHlsFilePath
+} = require("./lib/hls");
+
+const app = express();
+
+app.use(express.json({ limit: "2mb" }));
+
+ensureAppDirectories();
+
+app.use((req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+});
+
+app.use("/assets", express.static(path.join(__dirname, "public", "assets")));
+
+app.get("/api/health", async (req, res) => {
+    sendJson(res, {
+        ok: true,
+        app: "fatik-video-library",
+        version: "0.1.0"
+    });
+});
+
+app.get("/api/tree", async (req, res) => {
+    try {
+        const tree = await buildLibraryTree();
+        sendJson(res, { tree });
+    } catch (error) {
+        sendError(res, 500, "Failed to build library tree", error.message);
+    }
+});
+
+app.get("/api/folder", async (req, res) => {
+    try {
+        const folderPath = String(req.query.path || "");
+        const result = await listFolderContents(folderPath);
+        sendJson(res, result);
+    } catch (error) {
+        sendError(res, 400, "Failed to list folder", error.message);
+    }
+});
+
+app.get("/api/item/:id", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        const db = loadDatabase();
+        const state = getItemState(db, item.id);
+
+        sendJson(res, {
+            item: {
+                ...item,
+                state
+            }
+        });
+    } catch (error) {
+        sendError(res, 500, "Failed to get item", error.message);
+    }
+});
+
+app.get("/api/search", async (req, res) => {
+    try {
+        const query = String(req.query.q || "").trim();
+        const limit = Number(req.query.limit || 50);
+        const items = await searchItems(query, limit);
+        sendJson(res, { items });
+    } catch (error) {
+        sendError(res, 500, "Search failed", error.message);
+    }
+});
+
+app.post("/api/rescan", async (req, res) => {
+    try {
+        const tree = await buildLibraryTree({ forceRefresh: true });
+        sendJson(res, {
+            ok: true,
+            message: "Library rescan completed",
+            tree
+        });
+    } catch (error) {
+        sendError(res, 500, "Failed to rescan library", error.message);
+    }
+});
+
+app.post("/api/item/:id/watched", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        const watched = parseBoolean(req.body.watched);
+        const db = loadDatabase();
+
+        updateItemState(db, item.id, {
+            watched,
+            updatedAt: new Date().toISOString()
+        });
+
+        saveDatabase(db);
+
+        sendJson(res, {
+            ok: true,
+            itemId: item.id,
+            watched
+        });
+    } catch (error) {
+        sendError(res, 500, "Failed to update watched state", error.message);
+    }
+});
+
+app.post("/api/item/:id/progress", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        const position = Number(req.body.position || 0);
+        const duration = Number(req.body.duration || 0);
+
+        if (!Number.isFinite(position) || position < 0) {
+            return sendError(res, 400, "Invalid position");
+        }
+
+        const db = loadDatabase();
+
+        updateItemState(db, item.id, {
+            progress: {
+                position,
+                duration,
+                updatedAt: new Date().toISOString()
+            }
+        });
+
+        saveDatabase(db);
+
+        sendJson(res, {
+            ok: true,
+            itemId: item.id,
+            progress: {
+                position,
+                duration
+            }
+        });
+    } catch (error) {
+        sendError(res, 500, "Failed to update progress", error.message);
+    }
+});
+
+app.get("/api/poster/:id", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        await ensurePosterForItem(item);
+        const posterPath = getPosterPathForItem(item);
+
+        if (!fs.existsSync(posterPath)) {
+            return sendError(res, 404, "Poster not found");
+        }
+
+        res.sendFile(posterPath);
+    } catch (error) {
+        sendError(res, 500, "Failed to serve poster", error.message);
+    }
+});
+
+app.get("/api/stream/:id/original", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        const filePath = getSafeLibraryAbsolutePath(item.relativePath);
+
+        if (!fs.existsSync(filePath)) {
+            return sendError(res, 404, "Video file not found");
+        }
+
+        const stat = fs.statSync(filePath);
+        const fileSize = stat.size;
+        const range = req.headers.range;
+        const contentType = getMimeType(filePath);
+
+        if (!range) {
+            res.writeHead(200, {
+                "Content-Length": fileSize,
+                "Content-Type": contentType,
+                "Accept-Ranges": "bytes"
+            });
+            fs.createReadStream(filePath).pipe(res);
+            return;
+        }
+
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = Number(parts[0]);
+        const end = parts[1] ? Number(parts[1]) : fileSize - 1;
+
+        if (
+            !Number.isFinite(start) ||
+            !Number.isFinite(end) ||
+            start < 0 ||
+            end < start ||
+            start >= fileSize ||
+            end >= fileSize
+        ) {
+            res.status(416).set({
+                "Content-Range": `bytes */${fileSize}`
+            }).end();
+            return;
+        }
+
+        const chunkSize = end - start + 1;
+        const stream = fs.createReadStream(filePath, { start, end });
+
+        res.writeHead(206, {
+            "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+            "Accept-Ranges": "bytes",
+            "Content-Length": chunkSize,
+            "Content-Type": contentType
+        });
+
+        stream.pipe(res);
+    } catch (error) {
+        sendError(res, 500, "Failed to stream video", error.message);
+    }
+});
+
+app.post("/api/hls/:id/build", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        await ensureHlsForItem(item);
+
+        sendJson(res, {
+            ok: true,
+            itemId: item.id,
+            masterUrl: `/api/hls/${item.id}/master.m3u8`
+        });
+    } catch (error) {
+        sendError(res, 500, "Failed to build HLS", error.message);
+    }
+});
+
+app.get("/api/hls/:id/master.m3u8", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        await ensureHlsForItem(item);
+
+        const masterPath = getHlsMasterPath(item);
+        if (!fs.existsSync(masterPath)) {
+            return sendError(res, 404, "HLS master playlist not found");
+        }
+
+        res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+        res.sendFile(masterPath);
+    } catch (error) {
+        sendError(res, 500, "Failed to serve HLS master", error.message);
+    }
+});
+
+app.get("/api/hls/:id/:file", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        const fileName = path.basename(req.params.file);
+        const filePath = getHlsFilePath(item, fileName);
+
+        if (!fs.existsSync(filePath)) {
+            return sendError(res, 404, "HLS file not found");
+        }
+
+        if (fileName.endsWith(".m3u8")) {
+            res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+        } else if (fileName.endsWith(".ts")) {
+            res.setHeader("Content-Type", "video/mp2t");
+        }
+
+        res.sendFile(filePath);
+    } catch (error) {
+        sendError(res, 500, "Failed to serve HLS file", error.message);
+    }
+});
+
+app.get("/api/metadata/:id", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        const metadata = await getLocalVideoMetadata(item.relativePath);
+        sendJson(res, { metadata });
+    } catch (error) {
+        sendError(res, 500, "Failed to get metadata", error.message);
+    }
+});
+
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.listen(config.PORT, () => {
+    console.log(`fatik-video-library is running on port ${config.PORT}`);
+});
