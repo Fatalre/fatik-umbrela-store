@@ -1,16 +1,23 @@
 manifestVersion: 1
 id: fatik-video-library
 name: Video Library
-tagline: Video library
+tagline: Folder-based video library for Umbrel
 icon: icon.svg
 category: media
-version: "0.1.0"
+version: "0.1.1"
+
 port: 3000
-description: Video library app
+
+description: >-
+  A modern folder-based video library for Umbrel with tree navigation,
+  online playback, posters, and human-friendly quality selection.
+
 developer: Fatalre
-website: https://example.com
+website: https://bitstudio.com.ua
 repo: https://github.com/Fatalre/fatik-umbrela-store
-support: https://example.com
+support: https://bitstudio.com.ua
+
 gallery: []
-releaseNotes: init
+releaseNotes: Initial release
+
 dependencies: []
