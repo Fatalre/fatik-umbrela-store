@@ -82,5 +82,10 @@ export const api = {
 
     getHlsMasterUrl(itemId) {
         return `/api/hls/${encodeURIComponent(itemId)}/master.m3u8`;
-    }
+    },
+
+    async getContinueWatching(limit = 12) {
+        const data = await request(`/api/continue-watching?limit=${encodeURIComponent(limit)}`);
+        return data.items;
+    },
 };

@@ -12,13 +12,27 @@ function saveQuality(itemId, value) {
     localStorage.setItem(`fatik-video-library:quality:${itemId}`, value);
 }
 
+function getResumePosition(item) {
+    const position = Number(item.state?.progress?.position || 0);
+    const duration = Number(item.state?.progress?.duration || item.metadata?.durationSeconds || 0);
+
+    if (!Number.isFinite(position) || position <= 5) {
+        return 0;
+    }
+
+    if (Number.isFinite(duration) && duration > 0 && position >= duration - 30) {
+        return 0;
+    }
+
+    return position;
+}
+
 async function ensureHlsBuilt(itemId) {
     await api.buildHls(itemId);
     return api.getHlsMasterUrl(itemId);
 }
 
-async function attachSource(video, item, quality) {
-    const currentTime = video.currentTime || 0;
+async function attachSource(video, item, quality, resumePosition = 0) {
     const wasPaused = video.paused;
 
     if (video._hlsInstance) {
@@ -33,8 +47,8 @@ async function attachSource(video, item, quality) {
         video.addEventListener(
             "loadedmetadata",
             () => {
-                if (currentTime > 0 && Number.isFinite(currentTime)) {
-                    video.currentTime = currentTime;
+                if (resumePosition > 0 && Number.isFinite(resumePosition)) {
+                    video.currentTime = resumePosition;
                 }
             },
             { once: true }
@@ -59,9 +73,7 @@ async function attachSource(video, item, quality) {
         hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
             const levels = hls.levels || [];
 
-            const qualityIndex = levels.findIndex((level) => {
-                return `${level.height}p` === quality;
-            });
+            const qualityIndex = levels.findIndex((level) => `${level.height}p` === quality);
 
             if (qualityIndex >= 0) {
                 hls.currentLevel = qualityIndex;
@@ -69,8 +81,8 @@ async function attachSource(video, item, quality) {
                 hls.loadLevel = qualityIndex;
             }
 
-            if (currentTime > 0 && Number.isFinite(currentTime)) {
-                video.currentTime = currentTime;
+            if (resumePosition > 0 && Number.isFinite(resumePosition)) {
+                video.currentTime = resumePosition;
             }
 
             if (!wasPaused) {
@@ -88,8 +100,8 @@ async function attachSource(video, item, quality) {
         video.addEventListener(
             "loadedmetadata",
             () => {
-                if (currentTime > 0 && Number.isFinite(currentTime)) {
-                    video.currentTime = currentTime;
+                if (resumePosition > 0 && Number.isFinite(resumePosition)) {
+                    video.currentTime = resumePosition;
                 }
             },
             { once: true }
@@ -113,6 +125,7 @@ export async function renderPlayerPage(appRoot, itemId) {
         const item = await api.getItem(itemId);
         const metadata = item.metadata || {};
         const selectedQuality = getSavedQuality(item.id);
+        const resumePosition = getResumePosition(item);
 
         pageRoot.innerHTML = `
       ${renderBreadcrumb(item.parentPath || "")}
@@ -138,6 +151,7 @@ export async function renderPlayerPage(appRoot, itemId) {
             <div><strong>Resolution:</strong> ${formatResolution(metadata.resolution)}</div>
             <div><strong>Codec:</strong> ${escapeHtml(metadata.videoCodec || "Unknown")}</div>
             <div><strong>Size:</strong> ${formatBytes(item.sizeBytes || 0)}</div>
+            ${resumePosition > 0 ? `<div><strong>Resume from:</strong> ${formatDuration(resumePosition)}</div>` : ""}
           </div>
 
           ${renderQualitySelector(selectedQuality)}
@@ -145,6 +159,9 @@ export async function renderPlayerPage(appRoot, itemId) {
           <div class="actions-row">
             <button id="watched-button" class="secondary-button" type="button">
               ${item.state?.watched ? "Watched" : "Mark as watched"}
+            </button>
+            <button id="restart-button" class="secondary-button" type="button">
+              Restart
             </button>
             <a class="secondary-button" href="#/folder/${encodeURIComponent(item.parentPath || "")}">
               Back to folder
@@ -156,9 +173,10 @@ export async function renderPlayerPage(appRoot, itemId) {
 
         const video = document.getElementById("video-player");
         const watchedButton = document.getElementById("watched-button");
+        const restartButton = document.getElementById("restart-button");
         const qualitySelect = document.getElementById("quality-select");
 
-        await attachSource(video, item, selectedQuality);
+        await attachSource(video, item, selectedQuality, resumePosition);
 
         watchedButton?.addEventListener("click", async () => {
             try {
@@ -170,13 +188,24 @@ export async function renderPlayerPage(appRoot, itemId) {
             }
         });
 
+        restartButton?.addEventListener("click", async () => {
+            video.currentTime = 0;
+
+            try {
+                await api.saveProgress(item.id, 0, video.duration || 0);
+            } catch {
+            }
+        });
+
         qualitySelect?.addEventListener("change", async (event) => {
             const quality = event.target.value;
+            const currentTime = video.currentTime || 0;
+
             saveQuality(item.id, quality);
 
             qualitySelect.disabled = true;
             try {
-                await attachSource(video, item, quality);
+                await attachSource(video, item, quality, currentTime);
             } catch (error) {
                 alert(error.message);
             } finally {
@@ -192,6 +221,14 @@ export async function renderPlayerPage(appRoot, itemId) {
 
             try {
                 await api.saveProgress(item.id, video.currentTime, video.duration || 0);
+            } catch {
+            }
+        });
+
+        video?.addEventListener("ended", async () => {
+            try {
+                await api.setWatched(item.id, true);
+                await api.saveProgress(item.id, 0, video.duration || 0);
             } catch {
             }
         });

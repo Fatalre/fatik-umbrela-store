@@ -14,19 +14,36 @@ function folderCard(folder) {
   `;
 }
 
+function getProgressPercent(video) {
+    const position = Number(video.state?.progress?.position || 0);
+    const duration = Number(video.state?.progress?.duration || 0);
+
+    if (!duration || duration <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((position / duration) * 100)));
+}
+
 function videoCard(video) {
     const metadata = video.metadata || {};
     const watched = video.state?.watched === true;
+    const progressPercent = getProgressPercent(video);
 
     return `
     <a class="media-card" href="#/watch/${encodeURIComponent(video.id)}">
-      <img
-        class="poster"
-        src="/api/poster/${encodeURIComponent(video.id)}"
-        alt="${escapeHtml(video.title)}"
-        loading="lazy"
-        onerror="this.onerror=null;this.src='/assets/placeholder-poster.svg';"
-      />
+      <div style="position:relative;">
+        <img
+          class="poster"
+          src="/api/poster/${encodeURIComponent(video.id)}"
+          alt="${escapeHtml(video.title)}"
+          loading="lazy"
+          onerror="this.onerror=null;this.src='/assets/placeholder-poster.svg';"
+        />
+        ${progressPercent > 0 && progressPercent < 100 ? `
+          <div class="progress-bar">
+            <div class="progress-bar-fill" style="width:${progressPercent}%"></div>
+          </div>
+        ` : ""}
+      </div>
+
       <div class="media-body">
         ${watched ? `<div class="status-badge" style="margin-bottom:8px;">Watched</div>` : ""}
         <h3 class="media-title">${escapeHtml(video.title)}</h3>
@@ -51,6 +68,19 @@ function renderSearchResults(videos) {
   `;
 }
 
+function renderContinueWatching(items) {
+    if (!items.length) return "";
+
+    return `
+    <section style="margin-bottom: 28px;">
+      <h2 class="section-title">Continue watching</h2>
+      <div class="media-grid">
+        ${items.map(videoCard).join("")}
+      </div>
+    </section>
+  `;
+}
+
 export async function renderFolderPage(appRoot, folderPath = "") {
     state.currentFolderPath = folderPath;
 
@@ -68,15 +98,18 @@ export async function renderFolderPage(appRoot, folderPath = "") {
         }
 
         const data = await api.getFolder(folderPath);
+        const continueWatching = folderPath === "" ? await api.getContinueWatching(8) : [];
 
         const folders = Array.isArray(data.folders) ? data.folders : [];
         const videos = Array.isArray(data.videos) ? data.videos : [];
-        const hasContent = folders.length > 0 || videos.length > 0;
+        const hasContent = folders.length > 0 || videos.length > 0 || continueWatching.length > 0;
 
         pageRoot.innerHTML = `
       ${renderBreadcrumb(folderPath)}
 
       ${!hasContent ? renderEmptyState("Nothing here", "This folder is empty.") : ""}
+
+      ${folderPath === "" ? renderContinueWatching(continueWatching) : ""}
 
       ${folders.length ? `
         <section>

@@ -225,9 +225,29 @@ async function searchItems(query, limit = 50) {
         .slice(0, limit);
 }
 
+async function getContinueWatching(limit = 12) {
+    await ensureCacheReady();
+
+    return cache.items
+        .filter((item) => {
+            const position = Number(item.state?.progress?.position || 0);
+            const duration = Number(item.state?.progress?.duration || 0);
+            const watched = item.state?.watched === true;
+
+            return !watched && position > 0 && duration > 0 && position < duration * 0.98;
+        })
+        .sort((a, b) => {
+            const aUpdated = new Date(a.state?.progress?.updatedAt || 0).getTime();
+            const bUpdated = new Date(b.state?.progress?.updatedAt || 0).getTime();
+            return bUpdated - aUpdated;
+        })
+        .slice(0, limit);
+}
+
 module.exports = {
     buildLibraryTree,
     listFolderContents,
     findItemById,
-    searchItems
+    searchItems,
+    getContinueWatching
 };

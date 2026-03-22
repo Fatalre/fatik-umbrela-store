@@ -7,7 +7,8 @@ const {
     buildLibraryTree,
     listFolderContents,
     findItemById,
-    searchItems
+    searchItems,
+    getContinueWatching
 } = require("./lib/scan");
 const {
     getLocalVideoMetadata
@@ -108,6 +109,16 @@ app.get("/api/search", async (req, res) => {
         sendJson(res, { items });
     } catch (error) {
         sendError(res, 500, "Search failed", error.message);
+    }
+});
+
+app.get("/api/continue-watching", async (req, res) => {
+    try {
+        const limit = Number(req.query.limit || 12);
+        const items = await getContinueWatching(limit);
+        sendJson(res, { items });
+    } catch (error) {
+        sendError(res, 500, "Failed to load continue watching", error.message);
     }
 });
 
