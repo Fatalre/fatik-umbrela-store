@@ -26,16 +26,25 @@ export function renderTopbar(root) {
     const searchInput = document.getElementById("search-input");
     const rescanButton = document.getElementById("rescan-button");
 
-    searchInput?.addEventListener("change", async (event) => {
+    searchInput?.addEventListener("keydown", async (event) => {
+        if (event.key !== "Enter") return;
+
         const value = event.target.value.trim();
         state.searchQuery = value;
 
         if (!value) {
-            window.location.hash = `#/folder/${encodeURIComponent(state.currentFolderPath || "")}`;
+            state.searchResults = [];
+            window.dispatchEvent(new Event("hashchange"));
             return;
         }
 
-        window.location.hash = `#/folder/${encodeURIComponent(state.currentFolderPath || "")}`;
+        try {
+            state.searchResults = await api.search(value);
+            window.location.hash = "#/folder/";
+            window.dispatchEvent(new Event("hashchange"));
+        } catch (error) {
+            alert(error.message);
+        }
     });
 
     rescanButton?.addEventListener("click", async () => {
@@ -45,6 +54,7 @@ export function renderTopbar(root) {
         try {
             const result = await api.rescan();
             state.tree = result.tree;
+            state.searchResults = [];
             window.dispatchEvent(new Event("hashchange"));
         } catch (error) {
             alert(error.message);

@@ -141,6 +141,8 @@ app.post("/api/item/:id/watched", async (req, res) => {
 
         saveDatabase(db);
 
+        await buildLibraryTree({ forceRefresh: true });
+
         sendJson(res, {
             ok: true,
             itemId: item.id,
@@ -176,6 +178,8 @@ app.post("/api/item/:id/progress", async (req, res) => {
         });
 
         saveDatabase(db);
+
+        await buildLibraryTree({ forceRefresh: true });
 
         sendJson(res, {
             ok: true,

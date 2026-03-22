@@ -7,7 +7,6 @@ const {
     readDirSafe,
     walkDirectoryRecursive,
     isVideoFile,
-    isSubtitleFile,
     statSafe
 } = require("./fs-utils");
 const {
@@ -18,6 +17,10 @@ const {
 const {
     getLocalVideoMetadata
 } = require("./metadata");
+const {
+    loadDatabase,
+    getItemState
+} = require("./db");
 
 let cache = {
     builtAt: 0,
@@ -38,16 +41,22 @@ function createFolderNode(relativePath, name) {
 }
 
 function createItemFromFile(relativePath, metadata, fileStat) {
+    const itemId = createStableId(`video:${relativePath}`);
+    const db = loadDatabase();
+
     return {
-        id: createStableId(`video:${relativePath}`),
+        id: itemId,
         type: "video",
         title: metadata.title,
         kind: metadata.kind,
         relativePath,
-        parentPath: path.dirname(relativePath).replace(/\\/g, "/") === "." ? "" : path.dirname(relativePath).replace(/\\/g, "/"),
+        parentPath: path.dirname(relativePath).replace(/\\/g, "/") === "."
+            ? ""
+            : path.dirname(relativePath).replace(/\\/g, "/"),
         fileName: path.basename(relativePath),
         sizeBytes: Number(fileStat.size || 0),
-        metadata
+        metadata,
+        state: getItemState(db, itemId)
     };
 }
 
@@ -59,8 +68,9 @@ async function buildFolderNodeRecursive(relativePath = "") {
     const entries = readDirSafe(absolutePath).sort((a, b) => a.name.localeCompare(b.name));
 
     for (const entry of entries) {
-        const childRelativePath = normalizeRelativeLibraryPath(path.join(relativePath, entry.name).replace(/\\/g, "/"));
-        const childAbsolutePath = path.join(absolutePath, entry.name);
+        const childRelativePath = normalizeRelativeLibraryPath(
+            path.join(relativePath, entry.name).replace(/\\/g, "/")
+        );
 
         if (entry.isDirectory()) {
             const childNode = await buildFolderNodeRecursive(childRelativePath);
@@ -96,9 +106,7 @@ async function buildItemsIndex() {
     for (const relativePath of items) {
         const absolutePath = getSafeLibraryAbsolutePath(relativePath);
         const fileStat = statSafe(absolutePath);
-        if (!fileStat || !fileStat.isFile()) {
-            continue;
-        }
+        if (!fileStat || !fileStat.isFile()) continue;
 
         let metadata;
         try {
@@ -184,9 +192,7 @@ async function listFolderContents(folderPath = "") {
 
         if (entry.isFile() && isVideoFile(entry.name)) {
             const item = cache.items.find((value) => value.relativePath === childRelativePath);
-            if (item) {
-                videos.push(item);
-            }
+            if (item) videos.push(item);
         }
     }
 
@@ -209,17 +215,13 @@ async function searchItems(query, limit = 50) {
     await ensureCacheReady();
 
     const normalized = String(query || "").trim().toLowerCase();
-    if (!normalized) {
-        return [];
-    }
+    if (!normalized) return [];
 
     return cache.items
-        .filter((item) => {
-            return (
-                item.title.toLowerCase().includes(normalized) ||
-                item.relativePath.toLowerCase().includes(normalized)
-            );
-        })
+        .filter((item) =>
+            item.title.toLowerCase().includes(normalized) ||
+            item.relativePath.toLowerCase().includes(normalized)
+        )
         .slice(0, limit);
 }
 

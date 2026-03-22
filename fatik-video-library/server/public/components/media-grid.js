@@ -16,6 +16,7 @@ function folderCard(folder) {
 
 function videoCard(video) {
     const metadata = video.metadata || {};
+    const watched = video.state?.watched === true;
 
     return `
     <a class="media-card" href="#/watch/${encodeURIComponent(video.id)}">
@@ -27,6 +28,7 @@ function videoCard(video) {
         onerror="this.onerror=null;this.src='/assets/placeholder-poster.svg';"
       />
       <div class="media-body">
+        ${watched ? `<div class="status-badge" style="margin-bottom:8px;">Watched</div>` : ""}
         <h3 class="media-title">${escapeHtml(video.title)}</h3>
         <div class="media-meta">${escapeHtml(video.kind || "video")}</div>
         <div class="media-meta">${formatDuration(metadata.durationSeconds || 0)}</div>
@@ -34,6 +36,18 @@ function videoCard(video) {
         <div class="media-meta">${formatBytes(video.sizeBytes || 0)}</div>
       </div>
     </a>
+  `;
+}
+
+function renderSearchResults(videos) {
+    return `
+    ${renderBreadcrumb("")}
+    <section>
+      <h2 class="section-title">Search results</h2>
+      ${videos.length
+        ? `<div class="media-grid">${videos.map(videoCard).join("")}</div>`
+        : renderEmptyState("Nothing found", "No videos match your search.")}
+    </section>
   `;
 }
 
@@ -48,18 +62,15 @@ export async function renderFolderPage(appRoot, folderPath = "") {
     pageRoot.innerHTML = `<div class="card empty-state">Loading folder...</div>`;
 
     try {
+        if (state.searchQuery) {
+            pageRoot.innerHTML = renderSearchResults(state.searchResults || []);
+            return;
+        }
+
         const data = await api.getFolder(folderPath);
 
         const folders = Array.isArray(data.folders) ? data.folders : [];
-        let videos = Array.isArray(data.videos) ? data.videos : [];
-
-        if (state.searchQuery) {
-            const q = state.searchQuery.toLowerCase();
-            videos = videos.filter((item) =>
-                item.title.toLowerCase().includes(q) || item.relativePath.toLowerCase().includes(q)
-            );
-        }
-
+        const videos = Array.isArray(data.videos) ? data.videos : [];
         const hasContent = folders.length > 0 || videos.length > 0;
 
         pageRoot.innerHTML = `
