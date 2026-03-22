@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DOCKERHUB_USER="${DOCKERHUB_USER:-yourdockerhubusername}"
+DOCKERHUB_USER="fatalre"
 APP_ID="fatik-video-library"
 APP_VERSION="0.1.0"
 IMAGE_NAME="${DOCKERHUB_USER}/${APP_ID}:${APP_VERSION}"
+LATEST_NAME="${DOCKERHUB_USER}/${APP_ID}:latest"
 
-echo "Building ${IMAGE_NAME}..."
-docker build -t "${IMAGE_NAME}" ./server
+docker buildx inspect fatik-builder >/dev/null 2>&1 || docker buildx create --use --name fatik-builder
+docker buildx inspect --bootstrap
 
-echo "Pushing ${IMAGE_NAME}..."
-docker push "${IMAGE_NAME}"
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t "${IMAGE_NAME}" \
+  -t "${LATEST_NAME}" \
+  --push \
+  ./server
 
 echo "Done."
-echo "Use this image in docker-compose.yml:"
-echo "image: ${IMAGE_NAME}"
+echo "Published images:"
+echo "  ${IMAGE_NAME}"
+echo "  ${LATEST_NAME}"
