@@ -38,7 +38,7 @@ function videoCard(video, options = {}) {
     const showProgress = options.showProgress === true && progressPercent > 0;
 
     return `
-    <a class="media-card" href="#/watch/${encodeURIComponent(video.id)}">
+    <a class="media-card" href="#/watch-by-path/${encodeURIComponent(video.relativePath)}">
       <img
         class="poster"
         src="/api/poster/${encodeURIComponent(video.id)}"
@@ -73,7 +73,7 @@ function episodeRow(video) {
         : "Episode";
 
     return `
-    <a class="episode-row" href="#/watch/${encodeURIComponent(video.id)}">
+    <a class="episode-row" href="#/watch-by-path/${encodeURIComponent(video.relativePath)}">
       <div class="episode-main">
         <div class="episode-code">${escapeHtml(episodeLabel)}</div>
         <div class="episode-info">

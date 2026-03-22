@@ -5,7 +5,7 @@ import { renderQualitySelector } from "./quality-selector.js";
 import { formatBytes, formatDuration, formatResolution, escapeHtml } from "../utils.js";
 
 function getSavedQuality(itemId) {
-    return localStorage.getItem(`fatik-video-library:quality:${itemId}`) || "original";
+    return "original";
 }
 
 function saveQuality(itemId, value) {
@@ -61,11 +61,6 @@ function attachSubtitleTracks(video, item, subtitles) {
     });
 }
 
-async function ensureHlsBuilt(itemId) {
-    await api.buildHls(itemId);
-    return api.getHlsMasterUrl(itemId);
-}
-
 async function attachSource(video, item, quality, resumePosition = 0) {
     const wasPaused = video.paused;
 
@@ -74,88 +69,30 @@ async function attachSource(video, item, quality, resumePosition = 0) {
         video._hlsInstance = null;
     }
 
-    if (quality === "original") {
-        video.src = api.getOriginalStreamUrlByPath(item.relativePath);
-        video.load();
+    video.src = api.getOriginalStreamUrlByPath(item.relativePath);
+    video.load();
 
-        video.addEventListener(
-            "loadedmetadata",
-            () => {
-                if (resumePosition > 0 && Number.isFinite(resumePosition)) {
-                    video.currentTime = resumePosition;
-                }
-            },
-            { once: true }
-        );
-
-        if (!wasPaused) {
-            video.play().catch(() => {});
-        }
-
-        return;
-    }
-
-    const masterUrl = await ensureHlsBuilt(item.id);
-
-    if (window.Hls && window.Hls.isSupported()) {
-        const hls = new window.Hls();
-        video._hlsInstance = hls;
-
-        hls.loadSource(masterUrl);
-        hls.attachMedia(video);
-
-        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-            const levels = hls.levels || [];
-            const qualityIndex = levels.findIndex((level) => `${level.height}p` === quality);
-
-            if (qualityIndex >= 0) {
-                hls.currentLevel = qualityIndex;
-                hls.nextLevel = qualityIndex;
-                hls.loadLevel = qualityIndex;
-            }
-
+    video.addEventListener(
+        "loadedmetadata",
+        () => {
             if (resumePosition > 0 && Number.isFinite(resumePosition)) {
                 video.currentTime = resumePosition;
             }
+        },
+        { once: true }
+    );
 
-            if (!wasPaused) {
-                video.play().catch(() => {});
-            }
-        });
-
-        return;
+    if (!wasPaused) {
+        video.play().catch(() => {});
     }
-
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = masterUrl;
-        video.load();
-
-        video.addEventListener(
-            "loadedmetadata",
-            () => {
-                if (resumePosition > 0 && Number.isFinite(resumePosition)) {
-                    video.currentTime = resumePosition;
-                }
-            },
-            { once: true }
-        );
-
-        if (!wasPaused) {
-            video.play().catch(() => {});
-        }
-
-        return;
-    }
-
-    throw new Error("HLS playback is not supported in this browser");
 }
 
-export async function renderPlayerPage(appRoot, itemId) {
+export async function renderPlayerPage(appRoot, relativePath) {
     const pageRoot = document.getElementById("page-root");
     pageRoot.innerHTML = `<div class="card empty-state">Loading video...</div>`;
 
     try {
-        const item = await api.getItem(itemId);
+        const item = await api.getItemByPath(relativePath);
         const subtitles = await api.getSubtitles(item.id);
         const metadata = item.metadata || {};
         const selectedQuality = getSavedQuality(item.id);
@@ -209,7 +146,6 @@ export async function renderPlayerPage(appRoot, itemId) {
         const video = document.getElementById("video-player");
         const watchedButton = document.getElementById("watched-button");
         const restartButton = document.getElementById("restart-button");
-        const qualitySelect = document.getElementById("quality-select");
 
         attachSubtitleTracks(video, item, subtitles);
         await attachSource(video, item, selectedQuality, resumePosition);
@@ -230,22 +166,6 @@ export async function renderPlayerPage(appRoot, itemId) {
             try {
                 await api.saveProgress(item.id, 0, video.duration || 0);
             } catch {
-            }
-        });
-
-        qualitySelect?.addEventListener("change", async (event) => {
-            const quality = event.target.value;
-            const currentTime = video.currentTime || 0;
-
-            saveQuality(item.id, quality);
-
-            qualitySelect.disabled = true;
-            try {
-                await attachSource(video, item, quality, currentTime);
-            } catch (error) {
-                alert(error.message);
-            } finally {
-                qualitySelect.disabled = false;
             }
         });
 

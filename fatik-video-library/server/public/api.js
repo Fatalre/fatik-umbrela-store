@@ -54,14 +54,14 @@ export const api = {
     async setWatched(itemId, watched) {
         return request(`/api/item/${encodeURIComponent(itemId)}/watched`, {
             method: "POST",
-            body: JSON.stringify({ watched })
+            body: JSON.stringify({watched})
         });
     },
 
     async saveProgress(itemId, position, duration) {
         return request(`/api/item/${encodeURIComponent(itemId)}/progress`, {
             method: "POST",
-            body: JSON.stringify({ position, duration })
+            body: JSON.stringify({position, duration})
         });
     },
 
@@ -94,7 +94,12 @@ export const api = {
         return data.items;
     },
 
+    async getItemByPath(relativePath) {
+        const data = await request(`/api/item-by-path?path=${encodeURIComponent(relativePath)}`);
+        return data.item;
+    },
+
     getOriginalStreamUrlByPath(relativePath) {
         return `/api/stream-by-path?path=${encodeURIComponent(relativePath)}`;
-    }
+    },
 };

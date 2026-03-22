@@ -5,13 +5,14 @@ const {
     findExternalSubtitleFiles,
     readSubtitleAsVtt
 } = require("./lib/subtitles");
-const { config, ensureAppDirectories } = require("./lib/config");
+const {config, ensureAppDirectories} = require("./lib/config");
 const {
     buildLibraryTree,
     listFolderContents,
     findItemById,
+    findItemByRelativePath,
     searchItems,
-    getContinueWatching
+    getContinueWatchingItems
 } = require("./lib/scan");
 const {
     getLocalVideoMetadata
@@ -45,7 +46,7 @@ const {
 
 const app = express();
 
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({limit: "2mb"}));
 
 ensureAppDirectories();
 
@@ -63,8 +64,21 @@ async function findItemOrRefresh(itemId) {
         return item;
     }
 
-    await buildLibraryTree({ forceRefresh: true });
+    await buildLibraryTree({forceRefresh: true});
     item = await findItemById(itemId);
+
+    return item;
+}
+
+async function findItemByPathOrRefresh(relativePath) {
+    let item = await findItemByRelativePath(relativePath);
+
+    if (item) {
+        return item;
+    }
+
+    await buildLibraryTree({forceRefresh: true});
+    item = await findItemByRelativePath(relativePath);
 
     return item;
 }
@@ -80,7 +94,7 @@ app.get("/api/health", async (req, res) => {
 app.get("/api/tree", async (req, res) => {
     try {
         const tree = await buildLibraryTree();
-        sendJson(res, { tree });
+        sendJson(res, {tree});
     } catch (error) {
         sendError(res, 500, "Failed to build library tree", error.message);
     }
@@ -122,7 +136,7 @@ app.get("/api/search", async (req, res) => {
         const query = String(req.query.q || "").trim();
         const limit = Number(req.query.limit || 50);
         const items = await searchItems(query, limit);
-        sendJson(res, { items });
+        sendJson(res, {items});
     } catch (error) {
         sendError(res, 500, "Search failed", error.message);
     }
@@ -132,7 +146,7 @@ app.get("/api/continue-watching", async (req, res) => {
     try {
         const limit = Number(req.query.limit || 12);
         const items = await getContinueWatching(limit);
-        sendJson(res, { items });
+        sendJson(res, {items});
     } catch (error) {
         sendError(res, 500, "Failed to load continue watching", error.message);
     }
@@ -140,7 +154,7 @@ app.get("/api/continue-watching", async (req, res) => {
 
 app.post("/api/rescan", async (req, res) => {
     try {
-        const tree = await buildLibraryTree({ forceRefresh: true });
+        const tree = await buildLibraryTree({forceRefresh: true});
         sendJson(res, {
             ok: true,
             message: "Library rescan completed",
@@ -170,7 +184,7 @@ app.post("/api/item/:id/watched", async (req, res) => {
 
         saveDatabase(db);
 
-        await buildLibraryTree({ forceRefresh: true });
+        await buildLibraryTree({forceRefresh: true});
 
         sendJson(res, {
             ok: true,
@@ -210,7 +224,7 @@ app.post("/api/item/:id/progress", async (req, res) => {
 
         saveDatabase(db);
 
-        await buildLibraryTree({ forceRefresh: true });
+        await buildLibraryTree({forceRefresh: true});
 
         sendJson(res, {
             ok: true,
@@ -294,7 +308,7 @@ app.get("/api/stream/:id/original", async (req, res) => {
         }
 
         const chunkSize = end - start + 1;
-        const stream = fs.createReadStream(filePath, { start, end });
+        const stream = fs.createReadStream(filePath, {start, end});
 
         res.writeHead(206, {
             "Content-Range": `bytes ${start}-${end}/${fileSize}`,
@@ -383,7 +397,7 @@ app.get("/api/metadata/:id", async (req, res) => {
         }
 
         const metadata = await getLocalVideoMetadata(item.relativePath);
-        sendJson(res, { metadata });
+        sendJson(res, {metadata});
     } catch (error) {
         sendError(res, 500, "Failed to get metadata", error.message);
     }
@@ -439,7 +453,7 @@ app.get("/api/debug/item/:id", async (req, res) => {
             return sendError(res, 404, "Item not found");
         }
 
-        sendJson(res, { item });
+        sendJson(res, {item});
     } catch (error) {
         sendError(res, 500, "Debug lookup failed", error.message);
     }
@@ -447,7 +461,7 @@ app.get("/api/debug/item/:id", async (req, res) => {
 
 app.get("/api/debug/items", async (req, res) => {
     try {
-        await buildLibraryTree({ forceRefresh: true });
+        await buildLibraryTree({forceRefresh: true});
         const root = await listFolderContents("");
         sendJson(res, root);
     } catch (error) {
@@ -514,6 +528,32 @@ app.get("/api/stream-by-path", async (req, res) => {
         stream.pipe(res);
     } catch (error) {
         sendError(res, 500, "Failed to stream video", error.message);
+    }
+});
+
+app.get("/api/item-by-path", async (req, res) => {
+    try {
+        const relativePath = String(req.query.path || "");
+        if (!relativePath) {
+            return sendError(res, 400, "Missing path");
+        }
+
+        const item = await findItemByPathOrRefresh(relativePath);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        const db = loadDatabase();
+        const state = getItemState(db, item.id);
+
+        sendJson(res, {
+            item: {
+                ...item,
+                state
+            }
+        });
+    } catch (error) {
+        sendError(res, 500, "Failed to get item", error.message);
     }
 });
 

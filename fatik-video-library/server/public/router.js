@@ -5,9 +5,15 @@ export function initRouter(appRoot) {
     function handleRoute() {
         const hash = window.location.hash || "#/folder/";
 
+        if (hash.startsWith("#/watch-by-path/")) {
+            const relativePath = decodeURIComponent(hash.replace("#/watch-by-path/", ""));
+            renderPlayerPage(appRoot, relativePath);
+            return;
+        }
+
         if (hash.startsWith("#/watch/")) {
-            const itemId = decodeURIComponent(hash.replace("#/watch/", ""));
-            renderPlayerPage(appRoot, itemId);
+            const legacyValue = decodeURIComponent(hash.replace("#/watch/", ""));
+            renderPlayerPage(appRoot, legacyValue);
             return;
         }
 

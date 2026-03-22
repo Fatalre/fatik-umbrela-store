@@ -253,10 +253,18 @@ async function getContinueWatchingItems(limit = 12) {
         .slice(0, limit);
 }
 
+async function findItemByRelativePath(relativePath) {
+    await ensureCacheReady();
+
+    const normalized = normalizeRelativeLibraryPath(relativePath);
+    return cache.items.find((item) => item.relativePath === normalized) || null;
+}
+
 module.exports = {
     buildLibraryTree,
     listFolderContents,
     findItemById,
+    findItemByRelativePath,
     searchItems,
     getContinueWatchingItems
 };
