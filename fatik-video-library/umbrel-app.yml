@@ -3,7 +3,7 @@ id: fatik-video-library
 name: Video Library
 tagline: Folder-based video library for Umbrel
 category: media
-version: "0.2.6"
+version: "0.2.7"
 
 port: 3000
 icon: https://imgpx.com/VipaEh1CFabS.webp

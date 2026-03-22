@@ -571,6 +571,7 @@ app.post("/api/hls-by-path/build", async (req, res) => {
             masterUrl: `/api/hls-by-path/master?path=${encodeURIComponent(relativePath)}`
         });
     } catch (error) {
+        console.error("HLS BUILD ERROR:", error);
         sendError(res, 500, "Failed to build HLS", error.message);
     }
 });

@@ -1,9 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { execFile } = require("child_process");
-const { promisify } = require("util");
-
-const execFileAsync = promisify(execFile);
+const { spawn } = require("child_process");
 
 const { config } = require("./config");
 const { ensureDir } = require("./fs-utils");
@@ -31,6 +28,36 @@ function getProfileByName(name) {
     return config.HLS_PROFILES.find((profile) => profile.name === name) || null;
 }
 
+function runFfmpeg(args) {
+    return new Promise((resolve, reject) => {
+        const child = spawn("ffmpeg", args, {
+            stdio: ["ignore", "ignore", "pipe"]
+        });
+
+        let stderr = "";
+
+        child.stderr.on("data", (chunk) => {
+            stderr += chunk.toString();
+            if (stderr.length > 20000) {
+                stderr = stderr.slice(-20000);
+            }
+        });
+
+        child.on("error", (error) => {
+            reject(error);
+        });
+
+        child.on("close", (code) => {
+            if (code === 0) {
+                resolve();
+                return;
+            }
+
+            reject(new Error(stderr || `ffmpeg exited with code ${code}`));
+        });
+    });
+}
+
 async function buildVariantByPath(relativePath, quality) {
     const profile = getProfileByName(quality);
     if (!profile) {
@@ -48,8 +75,11 @@ async function buildVariantByPath(relativePath, quality) {
         return playlistPath;
     }
 
-    await execFileAsync("ffmpeg", [
+    const args = [
         "-y",
+        "-nostdin",
+        "-loglevel",
+        "error",
         "-i",
         inputPath,
         "-vf",
@@ -64,6 +94,7 @@ async function buildVariantByPath(relativePath, quality) {
         "aac",
         "-b:a",
         profile.audioBitrate,
+        "-sn",
         "-f",
         "hls",
         "-hls_time",
@@ -73,7 +104,9 @@ async function buildVariantByPath(relativePath, quality) {
         "-hls_segment_filename",
         segmentPattern,
         playlistPath
-    ]);
+    ];
+
+    await runFfmpeg(args);
 
     return playlistPath;
 }
