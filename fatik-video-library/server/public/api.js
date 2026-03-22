@@ -102,4 +102,15 @@ export const api = {
     getOriginalStreamUrlByPath(relativePath) {
         return `/api/stream-by-path?path=${encodeURIComponent(relativePath)}`;
     },
+
+    async buildHlsByPath(relativePath) {
+        return request("/api/hls-by-path/build", {
+            method: "POST",
+            body: JSON.stringify({ path: relativePath })
+        });
+    },
+
+    getHlsMasterUrlByPath(relativePath) {
+        return `/api/hls-by-path/master?path=${encodeURIComponent(relativePath)}`;
+    },
 };

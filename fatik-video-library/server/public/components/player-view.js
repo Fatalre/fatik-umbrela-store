@@ -5,7 +5,7 @@ import { renderQualitySelector } from "./quality-selector.js";
 import { formatBytes, formatDuration, formatResolution, escapeHtml } from "../utils.js";
 
 function getSavedQuality(itemId) {
-    return "original";
+    return localStorage.getItem(`fatik-video-library:quality:${itemId}`) || "original";
 }
 
 function saveQuality(itemId, value) {
@@ -25,6 +25,26 @@ function getResumePosition(item) {
     }
 
     return position;
+}
+
+function shouldPreferTranscodedPlayback(item) {
+    const fileName = (item.fileName || "").toLowerCase();
+
+    if (
+        fileName.endsWith(".avi") ||
+        fileName.endsWith(".mkv") ||
+        fileName.endsWith(".mov")
+    ) {
+        return true;
+    }
+
+    const codec = String(item.metadata?.videoCodec || "").toLowerCase();
+
+    if (codec && codec !== "h264" && codec !== "avc1") {
+        return true;
+    }
+
+    return false;
 }
 
 function renderSubtitleInfo(subtitles) {
@@ -61,6 +81,11 @@ function attachSubtitleTracks(video, item, subtitles) {
     });
 }
 
+async function ensureHlsBuilt(relativePath) {
+    await api.buildHlsByPath(relativePath);
+    return api.getHlsMasterUrlByPath(relativePath);
+}
+
 async function attachSource(video, item, quality, resumePosition = 0) {
     const wasPaused = video.paused;
 
@@ -69,22 +94,84 @@ async function attachSource(video, item, quality, resumePosition = 0) {
         video._hlsInstance = null;
     }
 
-    video.src = api.getOriginalStreamUrlByPath(item.relativePath);
-    video.load();
+    const restoreTime = () => {
+        if (resumePosition > 0 && Number.isFinite(resumePosition)) {
+            video.currentTime = resumePosition;
+        }
+    };
 
-    video.addEventListener(
-        "loadedmetadata",
-        () => {
-            if (resumePosition > 0 && Number.isFinite(resumePosition)) {
-                video.currentTime = resumePosition;
-            }
-        },
-        { once: true }
-    );
+    if (quality === "original") {
+        video.src = api.getOriginalStreamUrlByPath(item.relativePath);
+        video.load();
 
-    if (!wasPaused) {
-        video.play().catch(() => {});
+        video.addEventListener("loadedmetadata", restoreTime, { once: true });
+
+        video.addEventListener(
+            "error",
+            async () => {
+                if (!shouldPreferTranscodedPlayback(item)) {
+                    return;
+                }
+
+                try {
+                    await attachSource(video, item, "720p", resumePosition);
+                } catch (error) {
+                    console.error("Fallback to HLS failed:", error);
+                }
+            },
+            { once: true }
+        );
+
+        if (!wasPaused) {
+            video.play().catch(() => {});
+        }
+
+        return;
     }
+
+    const masterUrl = await ensureHlsBuilt(item.relativePath);
+
+    if (window.Hls && window.Hls.isSupported()) {
+        const hls = new window.Hls();
+        video._hlsInstance = hls;
+
+        hls.loadSource(masterUrl);
+        hls.attachMedia(video);
+
+        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+            const levels = hls.levels || [];
+            const qualityIndex = levels.findIndex((level) => `${level.height}p` === quality);
+
+            if (qualityIndex >= 0) {
+                hls.currentLevel = qualityIndex;
+                hls.nextLevel = qualityIndex;
+                hls.loadLevel = qualityIndex;
+            }
+
+            restoreTime();
+
+            if (!wasPaused) {
+                video.play().catch(() => {});
+            }
+        });
+
+        return;
+    }
+
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = masterUrl;
+        video.load();
+
+        video.addEventListener("loadedmetadata", restoreTime, { once: true });
+
+        if (!wasPaused) {
+            video.play().catch(() => {});
+        }
+
+        return;
+    }
+
+    throw new Error("HLS playback is not supported in this browser");
 }
 
 export async function renderPlayerPage(appRoot, relativePath) {
@@ -95,8 +182,12 @@ export async function renderPlayerPage(appRoot, relativePath) {
         const item = await api.getItemByPath(relativePath);
         const subtitles = await api.getSubtitles(item.id);
         const metadata = item.metadata || {};
-        const selectedQuality = getSavedQuality(item.id);
+        let selectedQuality = getSavedQuality(item.id);
         const resumePosition = getResumePosition(item);
+
+        if (shouldPreferTranscodedPlayback(item) && selectedQuality === "original") {
+            selectedQuality = "720p";
+        }
 
         pageRoot.innerHTML = `
       ${renderBreadcrumb(item.parentPath || "")}
@@ -146,9 +237,18 @@ export async function renderPlayerPage(appRoot, relativePath) {
         const video = document.getElementById("video-player");
         const watchedButton = document.getElementById("watched-button");
         const restartButton = document.getElementById("restart-button");
+        const qualitySelect = document.getElementById("quality-select");
 
         attachSubtitleTracks(video, item, subtitles);
-        await attachSource(video, item, selectedQuality, resumePosition);
+
+        try {
+            await attachSource(video, item, selectedQuality, resumePosition);
+        } catch (error) {
+            console.error(error);
+            qualitySelect.value = "original";
+            saveQuality(item.id, "original");
+            await attachSource(video, item, "original", resumePosition);
+        }
 
         watchedButton?.addEventListener("click", async () => {
             try {
@@ -166,6 +266,26 @@ export async function renderPlayerPage(appRoot, relativePath) {
             try {
                 await api.saveProgress(item.id, 0, video.duration || 0);
             } catch {
+            }
+        });
+
+        qualitySelect?.addEventListener("change", async (event) => {
+            const quality = event.target.value;
+            const currentTime = video.currentTime || 0;
+
+            saveQuality(item.id, quality);
+
+            qualitySelect.disabled = true;
+            try {
+                await attachSource(video, item, quality, currentTime);
+            } catch (error) {
+                console.error(error);
+                alert(`${error.message}. Falling back to Original.`);
+                qualitySelect.value = "original";
+                saveQuality(item.id, "original");
+                await attachSource(video, item, "original", currentTime);
+            } finally {
+                qualitySelect.disabled = false;
             }
         });
 

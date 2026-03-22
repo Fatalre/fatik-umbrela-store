@@ -39,9 +39,9 @@ const {
     getMimeType
 } = require("./lib/mime");
 const {
-    ensureHlsForItem,
-    getHlsMasterPath,
-    getHlsFilePath
+    ensureHlsForPath,
+    getHlsMasterPathByPath,
+    getHlsFilePathByPath
 } = require("./lib/hls");
 
 const app = express();
@@ -554,6 +554,76 @@ app.get("/api/item-by-path", async (req, res) => {
         });
     } catch (error) {
         sendError(res, 500, "Failed to get item", error.message);
+    }
+});
+
+app.post("/api/hls-by-path/build", async (req, res) => {
+    try {
+        const relativePath = String(req.body.path || "");
+        if (!relativePath) {
+            return sendError(res, 400, "Missing path");
+        }
+
+        await ensureHlsForPath(relativePath);
+
+        sendJson(res, {
+            ok: true,
+            masterUrl: `/api/hls-by-path/master?path=${encodeURIComponent(relativePath)}`
+        });
+    } catch (error) {
+        sendError(res, 500, "Failed to build HLS", error.message);
+    }
+});
+
+app.get("/api/hls-by-path/master", async (req, res) => {
+    try {
+        const relativePath = String(req.query.path || "");
+        if (!relativePath) {
+            return sendError(res, 400, "Missing path");
+        }
+
+        await ensureHlsForPath(relativePath);
+
+        const masterPath = getHlsMasterPathByPath(relativePath);
+        if (!fs.existsSync(masterPath)) {
+            return sendError(res, 404, "HLS master playlist not found");
+        }
+
+        res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+        res.sendFile(masterPath);
+    } catch (error) {
+        sendError(res, 500, "Failed to serve HLS master", error.message);
+    }
+});
+
+app.get("/api/hls-by-path/file", async (req, res) => {
+    try {
+        const relativePath = String(req.query.path || "");
+        const fileName = String(req.query.file || "");
+
+        if (!relativePath) {
+            return sendError(res, 400, "Missing path");
+        }
+
+        if (!fileName) {
+            return sendError(res, 400, "Missing file");
+        }
+
+        const filePath = getHlsFilePathByPath(relativePath, fileName);
+
+        if (!fs.existsSync(filePath)) {
+            return sendError(res, 404, "HLS file not found");
+        }
+
+        if (fileName.endsWith(".m3u8")) {
+            res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+        } else if (fileName.endsWith(".ts")) {
+            res.setHeader("Content-Type", "video/mp2t");
+        }
+
+        res.sendFile(filePath);
+    } catch (error) {
+        sendError(res, 500, "Failed to serve HLS file", error.message);
     }
 });
 

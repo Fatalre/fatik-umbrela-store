@@ -8,22 +8,28 @@ const execFileAsync = promisify(execFile);
 const { config } = require("./config");
 const { ensureDir } = require("./fs-utils");
 const { getSafeLibraryAbsolutePath } = require("./paths");
+const { createStableId } = require("./ids");
 
-function getItemHlsDir(item) {
-    return path.join(config.HLS_DIR, item.id);
+function getHlsKeyFromRelativePath(relativePath) {
+    return createStableId(`hls:${relativePath}`);
 }
 
-function getHlsMasterPath(item) {
-    return path.join(getItemHlsDir(item), "master.m3u8");
+function getItemHlsDirByPath(relativePath) {
+    const key = getHlsKeyFromRelativePath(relativePath);
+    return path.join(config.HLS_DIR, key);
 }
 
-function getHlsFilePath(item, fileName) {
-    return path.join(getItemHlsDir(item), path.basename(fileName));
+function getHlsMasterPathByPath(relativePath) {
+    return path.join(getItemHlsDirByPath(relativePath), "master.m3u8");
 }
 
-function buildMasterPlaylist(item) {
-    const itemDir = getItemHlsDir(item);
-    const masterPath = getHlsMasterPath(item);
+function getHlsFilePathByPath(relativePath, fileName) {
+    return path.join(getItemHlsDirByPath(relativePath), path.basename(fileName));
+}
+
+function buildMasterPlaylistByPath(relativePath) {
+    const itemDir = getItemHlsDirByPath(relativePath);
+    const masterPath = getHlsMasterPathByPath(relativePath);
 
     const variants = [
         {
@@ -52,17 +58,19 @@ function buildMasterPlaylist(item) {
         lines.push(
             `#EXT-X-STREAM-INF:BANDWIDTH=${variant.bandwidth},RESOLUTION=${variant.resolution}`
         );
-        lines.push(`/api/hls/${item.id}/${variant.file}`);
+        lines.push(
+            `/api/hls-by-path/file?path=${encodeURIComponent(relativePath)}&file=${encodeURIComponent(variant.file)}`
+        );
     }
 
     fs.writeFileSync(masterPath, `${lines.join("\n")}\n`, "utf8");
 }
 
-async function buildVariant(item, profile) {
-    const outputDir = getItemHlsDir(item);
+async function buildVariantByPath(relativePath, profile) {
+    const outputDir = getItemHlsDirByPath(relativePath);
     ensureDir(outputDir);
 
-    const inputPath = getSafeLibraryAbsolutePath(item.relativePath);
+    const inputPath = getSafeLibraryAbsolutePath(relativePath);
     const playlistPath = path.join(outputDir, `${profile.name}.m3u8`);
     const segmentPattern = path.join(outputDir, `${profile.name}_%03d.ts`);
 
@@ -98,23 +106,23 @@ async function buildVariant(item, profile) {
     ]);
 }
 
-async function ensureHlsForItem(item) {
-    const outputDir = getItemHlsDir(item);
+async function ensureHlsForPath(relativePath) {
+    const outputDir = getItemHlsDirByPath(relativePath);
     ensureDir(outputDir);
 
     for (const profile of config.HLS_PROFILES) {
         try {
-            await buildVariant(item, profile);
+            await buildVariantByPath(relativePath, profile);
         } catch (error) {
-            console.error(`Failed to build HLS profile ${profile.name} for ${item.id}:`, error.message);
+            console.error(`Failed to build HLS profile ${profile.name} for ${relativePath}:`, error.message);
         }
     }
 
-    buildMasterPlaylist(item);
+    buildMasterPlaylistByPath(relativePath);
 }
 
 module.exports = {
-    ensureHlsForItem,
-    getHlsMasterPath,
-    getHlsFilePath
+    ensureHlsForPath,
+    getHlsMasterPathByPath,
+    getHlsFilePathByPath
 };
