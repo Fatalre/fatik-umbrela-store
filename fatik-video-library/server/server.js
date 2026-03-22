@@ -557,7 +557,7 @@ app.get("/api/item-by-path", async (req, res) => {
     }
 });
 
-app.post("/api/hls-by-path/build", async (req, res) => {
+/*app.post("/api/hls-by-path/build", async (req, res) => {
     try {
         const relativePath = String(req.body.path || "");
         if (!relativePath) {
@@ -595,7 +595,7 @@ app.get("/api/hls-by-path/master", async (req, res) => {
     } catch (error) {
         sendError(res, 500, "Failed to serve HLS master", error.message);
     }
-});
+});*/
 
 app.get("/api/hls-by-path/file", async (req, res) => {
     try {
@@ -673,6 +673,7 @@ app.get("/api/hls-by-path/playlist", async (req, res) => {
         res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
         res.sendFile(playlistPath);
     } catch (error) {
+        console.error("HLS PLAYLIST ERROR:", error);
         sendError(res, 500, "Failed to serve HLS playlist", error.message);
     }
 });
