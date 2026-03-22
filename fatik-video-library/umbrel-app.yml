@@ -7,20 +7,14 @@ tagline: Folder-based video library for Umbrel
 description: >-
   A modern folder-based video library for Umbrel with tree navigation,
   online playback, posters, and human-friendly quality selection.
+developer: Fatalre
 website: https://bitstudio.com.ua
+dependencies: []
 repo: https://github.com/Fatalre/fatik-umbrela-store
 support: https://bitstudio.com.ua
-submitter: Fatalre
-submission: https://github.com/Fatalre/fatik-umbrela-store
 port: 3010
-gallery:
-  - 1.jpg
-  - 2.jpg
-  - 3.jpg
-releaseNotes: >-
-  Initial preview release with folder tree, local metadata scanning,
-  poster generation, and video playback foundation.
-dependencies: []
+gallery: []
+releaseNotes: ""
 path: ""
 defaultUsername: ""
 defaultPassword: ""
