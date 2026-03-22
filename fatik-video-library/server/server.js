@@ -56,6 +56,19 @@ app.use((req, res, next) => {
 
 app.use("/assets", express.static(path.join(__dirname, "public", "assets")));
 
+async function findItemOrRefresh(itemId) {
+    let item = await findItemOrRefresh(itemId);
+
+    if (item) {
+        return item;
+    }
+
+    await buildLibraryTree({ forceRefresh: true });
+    item = await findItemOrRefresh(itemId);
+
+    return item;
+}
+
 app.get("/api/health", async (req, res) => {
     sendJson(res, {
         ok: true,
@@ -85,7 +98,7 @@ app.get("/api/folder", async (req, res) => {
 
 app.get("/api/item/:id", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -140,7 +153,7 @@ app.post("/api/rescan", async (req, res) => {
 
 app.post("/api/item/:id/watched", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -169,7 +182,7 @@ app.post("/api/item/:id/watched", async (req, res) => {
 
 app.post("/api/item/:id/progress", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -210,7 +223,7 @@ app.post("/api/item/:id/progress", async (req, res) => {
 
 app.get("/api/poster/:id", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -230,7 +243,7 @@ app.get("/api/poster/:id", async (req, res) => {
 
 app.get("/api/stream/:id/original", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -292,7 +305,7 @@ app.get("/api/stream/:id/original", async (req, res) => {
 
 app.post("/api/hls/:id/build", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -311,7 +324,7 @@ app.post("/api/hls/:id/build", async (req, res) => {
 
 app.get("/api/hls/:id/master.m3u8", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -332,7 +345,7 @@ app.get("/api/hls/:id/master.m3u8", async (req, res) => {
 
 app.get("/api/hls/:id/:file", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -358,7 +371,7 @@ app.get("/api/hls/:id/:file", async (req, res) => {
 
 app.get("/api/metadata/:id", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -372,7 +385,7 @@ app.get("/api/metadata/:id", async (req, res) => {
 
 app.get("/api/subtitles/:id", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -390,7 +403,7 @@ app.get("/api/subtitles/:id", async (req, res) => {
 
 app.get("/api/subtitles/:id/:file", async (req, res) => {
     try {
-        const item = await findItemById(req.params.id);
+        const item = await findItemOrRefresh(req.params.id);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -409,6 +422,30 @@ app.get("/api/subtitles/:id/:file", async (req, res) => {
         res.send(vttText);
     } catch (error) {
         sendError(res, 500, "Failed to serve subtitle", error.message);
+    }
+});
+
+app.get("/api/debug/item/:id", async (req, res) => {
+    try {
+        const item = await findItemOrRefresh(req.params.id);
+
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        sendJson(res, { item });
+    } catch (error) {
+        sendError(res, 500, "Debug lookup failed", error.message);
+    }
+});
+
+app.get("/api/debug/items", async (req, res) => {
+    try {
+        await buildLibraryTree({ forceRefresh: true });
+        const root = await listFolderContents("");
+        sendJson(res, root);
+    } catch (error) {
+        sendError(res, 500, "Failed to load debug items", error.message);
     }
 });
 
