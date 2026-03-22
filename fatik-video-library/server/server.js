@@ -154,6 +154,8 @@ app.post("/api/rescan", async (req, res) => {
 app.post("/api/item/:id/watched", async (req, res) => {
     try {
         const item = await findItemOrRefresh(req.params.id);
+        console.log("ITEM ID:", req.params.id);
+        console.log("FOUND ITEM PAGE:", item ? item.relativePath : null);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -183,6 +185,8 @@ app.post("/api/item/:id/watched", async (req, res) => {
 app.post("/api/item/:id/progress", async (req, res) => {
     try {
         const item = await findItemOrRefresh(req.params.id);
+        console.log("ITEM ID:", req.params.id);
+        console.log("FOUND ITEM PAGE:", item ? item.relativePath : null);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -244,6 +248,8 @@ app.get("/api/poster/:id", async (req, res) => {
 app.get("/api/stream/:id/original", async (req, res) => {
     try {
         const item = await findItemOrRefresh(req.params.id);
+        console.log("STREAM ID:", req.params.id);
+        console.log("FOUND ITEM:", item ? item.relativePath : null);
         if (!item) {
             return sendError(res, 404, "Item not found");
         }
@@ -446,6 +452,68 @@ app.get("/api/debug/items", async (req, res) => {
         sendJson(res, root);
     } catch (error) {
         sendError(res, 500, "Failed to load debug items", error.message);
+    }
+});
+
+app.get("/api/stream-by-path", async (req, res) => {
+    try {
+        const relativePath = String(req.query.path || "");
+        if (!relativePath) {
+            return sendError(res, 400, "Missing path");
+        }
+
+        const filePath = getSafeLibraryAbsolutePath(relativePath);
+
+        if (!fs.existsSync(filePath)) {
+            return sendError(res, 404, "Video file not found");
+        }
+
+        const stat = fs.statSync(filePath);
+        const fileSize = stat.size;
+        const range = req.headers.range;
+        const contentType = getMimeType(filePath);
+
+        if (!range) {
+            res.writeHead(200, {
+                "Content-Length": fileSize,
+                "Content-Type": contentType,
+                "Accept-Ranges": "bytes"
+            });
+            fs.createReadStream(filePath).pipe(res);
+            return;
+        }
+
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = Number(parts[0]);
+        const end = parts[1] ? Number(parts[1]) : fileSize - 1;
+
+        if (
+            !Number.isFinite(start) ||
+            !Number.isFinite(end) ||
+            start < 0 ||
+            end < start ||
+            start >= fileSize ||
+            end >= fileSize
+        ) {
+            res.status(416).set({
+                "Content-Range": `bytes */${fileSize}`
+            }).end();
+            return;
+        }
+
+        const chunkSize = end - start + 1;
+        const stream = fs.createReadStream(filePath, { start, end });
+
+        res.writeHead(206, {
+            "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+            "Accept-Ranges": "bytes",
+            "Content-Length": chunkSize,
+            "Content-Type": contentType
+        });
+
+        stream.pipe(res);
+    } catch (error) {
+        sendError(res, 500, "Failed to stream video", error.message);
     }
 });
 

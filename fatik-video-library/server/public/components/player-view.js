@@ -75,7 +75,7 @@ async function attachSource(video, item, quality, resumePosition = 0) {
     }
 
     if (quality === "original") {
-        video.src = api.getOriginalStreamUrl(item.id);
+        video.src = api.getOriginalStreamUrlByPath(item.relativePath);
         video.load();
 
         video.addEventListener(

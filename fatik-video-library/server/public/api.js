@@ -93,4 +93,8 @@ export const api = {
         const data = await request(`/api/continue-watching?limit=${encodeURIComponent(limit)}`);
         return data.items;
     },
+
+    getOriginalStreamUrlByPath(relativePath) {
+        return `/api/stream-by-path?path=${encodeURIComponent(relativePath)}`;
+    }
 };
