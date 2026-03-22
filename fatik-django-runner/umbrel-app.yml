@@ -2,7 +2,7 @@ manifestVersion: 1
 id: fatik-django-runner
 name: Django Runner
 category: developer
-version: "1.0.1"
+version: "1.0.2"
 tagline: Run your Django projects on Umbrel
 description: >-
   A local Django project launcher for Umbrel.  
