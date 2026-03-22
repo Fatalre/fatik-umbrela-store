@@ -6,13 +6,3 @@ services:
 
   server:
     image: fatalre/fatik-video-library:0.1.0
-    restart: unless-stopped
-    environment:
-      PORT: 3000
-      NODE_ENV: production
-      DATA_DIR: /data
-      LIBRARY_DIR: /data/library
-      CACHE_DIR: /data/cache
-      CONFIG_DIR: /data/config
-    volumes:
-      - ${APP_DATA_DIR}/data:/data
