@@ -27,6 +27,40 @@ function getResumePosition(item) {
     return position;
 }
 
+function renderSubtitleInfo(subtitles) {
+    if (!subtitles.length) {
+        return `<div><strong>Subtitles:</strong> None</div>`;
+    }
+
+    return `
+    <div>
+      <strong>Subtitles:</strong>
+      ${subtitles.map((item) => escapeHtml(item.language || item.fileName)).join(", ")}
+    </div>
+  `;
+}
+
+function attachSubtitleTracks(video, item, subtitles) {
+    const existingTracks = Array.from(video.querySelectorAll("track"));
+    for (const track of existingTracks) {
+        track.remove();
+    }
+
+    subtitles.forEach((subtitle, index) => {
+        const track = document.createElement("track");
+        track.kind = "subtitles";
+        track.label = subtitle.language || subtitle.fileName;
+        track.srclang = (subtitle.language || "en").slice(0, 2).toLowerCase();
+        track.src = `/api/subtitles/${encodeURIComponent(item.id)}/${encodeURIComponent(subtitle.fileName)}`;
+
+        if (index === 0) {
+            track.default = true;
+        }
+
+        video.appendChild(track);
+    });
+}
+
 async function ensureHlsBuilt(itemId) {
     await api.buildHls(itemId);
     return api.getHlsMasterUrl(itemId);
@@ -72,7 +106,6 @@ async function attachSource(video, item, quality, resumePosition = 0) {
 
         hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
             const levels = hls.levels || [];
-
             const qualityIndex = levels.findIndex((level) => `${level.height}p` === quality);
 
             if (qualityIndex >= 0) {
@@ -123,6 +156,7 @@ export async function renderPlayerPage(appRoot, itemId) {
 
     try {
         const item = await api.getItem(itemId);
+        const subtitles = await api.getSubtitles(item.id);
         const metadata = item.metadata || {};
         const selectedQuality = getSavedQuality(item.id);
         const resumePosition = getResumePosition(item);
@@ -152,6 +186,7 @@ export async function renderPlayerPage(appRoot, itemId) {
             <div><strong>Codec:</strong> ${escapeHtml(metadata.videoCodec || "Unknown")}</div>
             <div><strong>Size:</strong> ${formatBytes(item.sizeBytes || 0)}</div>
             ${resumePosition > 0 ? `<div><strong>Resume from:</strong> ${formatDuration(resumePosition)}</div>` : ""}
+            ${renderSubtitleInfo(subtitles)}
           </div>
 
           ${renderQualitySelector(selectedQuality)}
@@ -176,6 +211,7 @@ export async function renderPlayerPage(appRoot, itemId) {
         const restartButton = document.getElementById("restart-button");
         const qualitySelect = document.getElementById("quality-select");
 
+        attachSubtitleTracks(video, item, subtitles);
         await attachSource(video, item, selectedQuality, resumePosition);
 
         watchedButton?.addEventListener("click", async () => {

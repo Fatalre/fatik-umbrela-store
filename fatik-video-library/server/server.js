@@ -1,7 +1,10 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-
+const {
+    findExternalSubtitleFiles,
+    readSubtitleAsVtt
+} = require("./lib/subtitles");
 const { config, ensureAppDirectories } = require("./lib/config");
 const {
     buildLibraryTree,
@@ -364,6 +367,48 @@ app.get("/api/metadata/:id", async (req, res) => {
         sendJson(res, { metadata });
     } catch (error) {
         sendError(res, 500, "Failed to get metadata", error.message);
+    }
+});
+
+app.get("/api/subtitles/:id", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        const subtitles = findExternalSubtitleFiles(item.relativePath);
+
+        sendJson(res, {
+            itemId: item.id,
+            subtitles
+        });
+    } catch (error) {
+        sendError(res, 500, "Failed to load subtitles", error.message);
+    }
+});
+
+app.get("/api/subtitles/:id/:file", async (req, res) => {
+    try {
+        const item = await findItemById(req.params.id);
+        if (!item) {
+            return sendError(res, 404, "Item not found");
+        }
+
+        const fileName = path.basename(req.params.file);
+        const subtitles = findExternalSubtitleFiles(item.relativePath);
+        const subtitle = subtitles.find((entry) => entry.fileName === fileName);
+
+        if (!subtitle) {
+            return sendError(res, 404, "Subtitle file not found");
+        }
+
+        const vttText = readSubtitleAsVtt(item.relativePath, fileName);
+
+        res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+        res.send(vttText);
+    } catch (error) {
+        sendError(res, 500, "Failed to serve subtitle", error.message);
     }
 });
 

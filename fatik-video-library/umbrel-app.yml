@@ -4,7 +4,7 @@ name: Video Library
 tagline: Folder-based video library for Umbrel
 icon: icon.svg
 category: media
-version: "0.1.6"
+version: "0.1.7"
 
 port: 3000
 

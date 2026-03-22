@@ -21,6 +21,9 @@ const {
     loadDatabase,
     getItemState
 } = require("./db");
+const {
+    findExternalSubtitleFiles
+} = require("./subtitles");
 
 let cache = {
     builtAt: 0,
@@ -56,6 +59,7 @@ function createItemFromFile(relativePath, metadata, fileStat) {
         fileName: path.basename(relativePath),
         sizeBytes: Number(fileStat.size || 0),
         metadata,
+        subtitles: findExternalSubtitleFiles(relativePath),
         state: getItemState(db, itemId)
     };
 }
@@ -225,21 +229,26 @@ async function searchItems(query, limit = 50) {
         .slice(0, limit);
 }
 
-async function getContinueWatching(limit = 12) {
+async function getContinueWatchingItems(limit = 12) {
     await ensureCacheReady();
 
     return cache.items
         .filter((item) => {
-            const position = Number(item.state?.progress?.position || 0);
-            const duration = Number(item.state?.progress?.duration || 0);
-            const watched = item.state?.watched === true;
+            const progress = item.state?.progress;
+            const duration = Number(progress?.duration || item.metadata?.durationSeconds || 0);
+            const position = Number(progress?.position || 0);
 
-            return !watched && position > 0 && duration > 0 && position < duration * 0.98;
+            if (!Number.isFinite(position) || position <= 0) return false;
+            if (!Number.isFinite(duration) || duration <= 0) return false;
+            if (position >= duration - 30) return false;
+            if (item.state?.watched) return false;
+
+            return true;
         })
         .sort((a, b) => {
-            const aUpdated = new Date(a.state?.progress?.updatedAt || 0).getTime();
-            const bUpdated = new Date(b.state?.progress?.updatedAt || 0).getTime();
-            return bUpdated - aUpdated;
+            const aTime = new Date(a.state?.progress?.updatedAt || 0).getTime();
+            const bTime = new Date(b.state?.progress?.updatedAt || 0).getTime();
+            return bTime - aTime;
         })
         .slice(0, limit);
 }
@@ -249,5 +258,5 @@ module.exports = {
     listFolderContents,
     findItemById,
     searchItems,
-    getContinueWatching
+    getContinueWatchingItems
 };

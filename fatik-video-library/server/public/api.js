@@ -84,6 +84,11 @@ export const api = {
         return `/api/hls/${encodeURIComponent(itemId)}/master.m3u8`;
     },
 
+    async getSubtitles(itemId) {
+        const data = await request(`/api/subtitles/${encodeURIComponent(itemId)}`);
+        return data.subtitles;
+    },
+
     async getContinueWatching(limit = 12) {
         const data = await request(`/api/continue-watching?limit=${encodeURIComponent(limit)}`);
         return data.items;
