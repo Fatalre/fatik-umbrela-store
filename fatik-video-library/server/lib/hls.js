@@ -19,63 +19,33 @@ function getItemHlsDirByPath(relativePath) {
     return path.join(config.HLS_DIR, key);
 }
 
-function getHlsMasterPathByPath(relativePath) {
-    return path.join(getItemHlsDirByPath(relativePath), "master.m3u8");
+function getVariantPlaylistPath(relativePath, quality) {
+    return path.join(getItemHlsDirByPath(relativePath), `${quality}.m3u8`);
 }
 
 function getHlsFilePathByPath(relativePath, fileName) {
     return path.join(getItemHlsDirByPath(relativePath), path.basename(fileName));
 }
 
-function buildMasterPlaylistByPath(relativePath) {
-    const itemDir = getItemHlsDirByPath(relativePath);
-    const masterPath = getHlsMasterPathByPath(relativePath);
-
-    const variants = [
-        {
-            name: "1080p",
-            bandwidth: 5200000,
-            resolution: "1920x1080",
-            file: "1080p.m3u8"
-        },
-        {
-            name: "720p",
-            bandwidth: 3000000,
-            resolution: "1280x720",
-            file: "720p.m3u8"
-        },
-        {
-            name: "480p",
-            bandwidth: 1400000,
-            resolution: "854x480",
-            file: "480p.m3u8"
-        }
-    ].filter((variant) => fs.existsSync(path.join(itemDir, variant.file)));
-
-    const lines = ["#EXTM3U", "#EXT-X-VERSION:3"];
-
-    for (const variant of variants) {
-        lines.push(
-            `#EXT-X-STREAM-INF:BANDWIDTH=${variant.bandwidth},RESOLUTION=${variant.resolution}`
-        );
-        lines.push(
-            `/api/hls-by-path/file?path=${encodeURIComponent(relativePath)}&file=${encodeURIComponent(variant.file)}`
-        );
-    }
-
-    fs.writeFileSync(masterPath, `${lines.join("\n")}\n`, "utf8");
+function getProfileByName(name) {
+    return config.HLS_PROFILES.find((profile) => profile.name === name) || null;
 }
 
-async function buildVariantByPath(relativePath, profile) {
+async function buildVariantByPath(relativePath, quality) {
+    const profile = getProfileByName(quality);
+    if (!profile) {
+        throw new Error(`Unknown HLS quality: ${quality}`);
+    }
+
     const outputDir = getItemHlsDirByPath(relativePath);
     ensureDir(outputDir);
 
     const inputPath = getSafeLibraryAbsolutePath(relativePath);
-    const playlistPath = path.join(outputDir, `${profile.name}.m3u8`);
+    const playlistPath = getVariantPlaylistPath(relativePath, profile.name);
     const segmentPattern = path.join(outputDir, `${profile.name}_%03d.ts`);
 
     if (fs.existsSync(playlistPath)) {
-        return;
+        return playlistPath;
     }
 
     await execFileAsync("ffmpeg", [
@@ -104,25 +74,12 @@ async function buildVariantByPath(relativePath, profile) {
         segmentPattern,
         playlistPath
     ]);
-}
 
-async function ensureHlsForPath(relativePath) {
-    const outputDir = getItemHlsDirByPath(relativePath);
-    ensureDir(outputDir);
-
-    for (const profile of config.HLS_PROFILES) {
-        try {
-            await buildVariantByPath(relativePath, profile);
-        } catch (error) {
-            console.error(`Failed to build HLS profile ${profile.name} for ${relativePath}:`, error.message);
-        }
-    }
-
-    buildMasterPlaylistByPath(relativePath);
+    return playlistPath;
 }
 
 module.exports = {
-    ensureHlsForPath,
-    getHlsMasterPathByPath,
+    buildVariantByPath,
+    getVariantPlaylistPath,
     getHlsFilePathByPath
 };

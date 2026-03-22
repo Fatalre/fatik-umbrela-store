@@ -1,11 +1,19 @@
-import { api } from "../api.js";
-import { renderEmptyState } from "./empty-state.js";
-import { renderBreadcrumb } from "./breadcrumb.js";
-import { renderQualitySelector } from "./quality-selector.js";
-import { formatBytes, formatDuration, formatResolution, escapeHtml } from "../utils.js";
+import {api} from "../api.js";
+import {renderEmptyState} from "./empty-state.js";
+import {renderBreadcrumb} from "./breadcrumb.js";
+import {renderQualitySelector} from "./quality-selector.js";
+import {formatBytes, formatDuration, formatResolution, escapeHtml} from "../utils.js";
 
 function getSavedQuality(itemId) {
     return localStorage.getItem(`fatik-video-library:quality:${itemId}`) || "original";
+}
+
+function getInitialQuality(item) {
+    if (shouldPreferTranscodedPlayback(item)) {
+        return "480p";
+    }
+
+    return "original";
 }
 
 function saveQuality(itemId, value) {
@@ -114,7 +122,7 @@ async function attachSource(video, item, quality, resumePosition = 0) {
                 }
 
                 try {
-                    await attachSource(video, item, "720p", resumePosition);
+                    await attachSource(video, item, "480p", resumePosition);
                 } catch (error) {
                     console.error("Fallback to HLS failed:", error);
                 }
@@ -129,25 +137,17 @@ async function attachSource(video, item, quality, resumePosition = 0) {
         return;
     }
 
-    const masterUrl = await ensureHlsBuilt(item.relativePath);
+    await api.buildHlsVariantByPath(item.relativePath, quality);
+    const playlistUrl = api.getHlsPlaylistUrlByPath(item.relativePath, quality);
 
     if (window.Hls && window.Hls.isSupported()) {
         const hls = new window.Hls();
         video._hlsInstance = hls;
 
-        hls.loadSource(masterUrl);
+        hls.loadSource(playlistUrl);
         hls.attachMedia(video);
 
         hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-            const levels = hls.levels || [];
-            const qualityIndex = levels.findIndex((level) => `${level.height}p` === quality);
-
-            if (qualityIndex >= 0) {
-                hls.currentLevel = qualityIndex;
-                hls.nextLevel = qualityIndex;
-                hls.loadLevel = qualityIndex;
-            }
-
             restoreTime();
 
             if (!wasPaused) {
@@ -159,7 +159,7 @@ async function attachSource(video, item, quality, resumePosition = 0) {
     }
 
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = masterUrl;
+        video.src = playlistUrl;
         video.load();
 
         video.addEventListener("loadedmetadata", restoreTime, { once: true });
@@ -185,8 +185,8 @@ export async function renderPlayerPage(appRoot, relativePath) {
         let selectedQuality = getSavedQuality(item.id);
         const resumePosition = getResumePosition(item);
 
-        if (shouldPreferTranscodedPlayback(item) && selectedQuality === "original") {
-            selectedQuality = "720p";
+        if (!selectedQuality || selectedQuality === "original") {
+            selectedQuality = getInitialQuality(item);
         }
 
         pageRoot.innerHTML = `

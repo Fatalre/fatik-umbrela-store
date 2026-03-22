@@ -113,4 +113,15 @@ export const api = {
     getHlsMasterUrlByPath(relativePath) {
         return `/api/hls-by-path/master?path=${encodeURIComponent(relativePath)}`;
     },
+
+    async buildHlsVariantByPath(relativePath, quality) {
+        return request("/api/hls-by-path/build", {
+            method: "POST",
+            body: JSON.stringify({ path: relativePath, quality })
+        });
+    },
+
+    getHlsPlaylistUrlByPath(relativePath, quality) {
+        return `/api/hls-by-path/playlist?path=${encodeURIComponent(relativePath)}&quality=${encodeURIComponent(quality)}`;
+    },
 };
