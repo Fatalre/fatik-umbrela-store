@@ -54,21 +54,14 @@ export const api = {
     async setWatched(itemId, watched) {
         return request(`/api/item/${encodeURIComponent(itemId)}/watched`, {
             method: "POST",
-            body: JSON.stringify({watched})
+            body: JSON.stringify({ watched })
         });
     },
 
     async saveProgress(itemId, position, duration) {
         return request(`/api/item/${encodeURIComponent(itemId)}/progress`, {
             method: "POST",
-            body: JSON.stringify({position, duration})
-        });
-    },
-
-    async buildHls(itemId) {
-        return request(`/api/hls/${encodeURIComponent(itemId)}/build`, {
-            method: "POST",
-            body: JSON.stringify({})
+            body: JSON.stringify({ position, duration })
         });
     },
 
@@ -78,10 +71,6 @@ export const api = {
 
     getOriginalStreamUrl(itemId) {
         return `/api/stream/${encodeURIComponent(itemId)}/original`;
-    },
-
-    getHlsMasterUrl(itemId) {
-        return `/api/hls/${encodeURIComponent(itemId)}/master.m3u8`;
     },
 
     async getSubtitles(itemId) {
@@ -103,25 +92,11 @@ export const api = {
         return `/api/stream-by-path?path=${encodeURIComponent(relativePath)}`;
     },
 
-    async buildHlsByPath(relativePath) {
-        return request("/api/hls-by-path/build", {
-            method: "POST",
-            body: JSON.stringify({ path: relativePath })
-        });
+    getConvertedStreamUrlByPath(relativePath) {
+        return `/api/stream-by-path-mp4?path=${encodeURIComponent(relativePath)}`;
     },
 
-    getHlsMasterUrlByPath(relativePath) {
-        return `/api/hls-by-path/master?path=${encodeURIComponent(relativePath)}`;
-    },
-
-    async buildHlsVariantByPath(relativePath, quality) {
-        return request("/api/hls-by-path/build", {
-            method: "POST",
-            body: JSON.stringify({ path: relativePath, quality })
-        });
-    },
-
-    getHlsPlaylistUrlByPath(relativePath, quality) {
-        return `/api/hls-by-path/playlist?path=${encodeURIComponent(relativePath)}&quality=${encodeURIComponent(quality)}`;
-    },
+    async getMediaSource(relativePath) {
+        return request(`/api/media-source?path=${encodeURIComponent(relativePath)}`);
+    }
 };
