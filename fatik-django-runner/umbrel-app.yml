@@ -2,7 +2,7 @@ manifestVersion: 1
 id: fatik-django-runner
 name: Django Runner
 category: developer
-version: "1.0.0"
+version: "1.0.1"
 tagline: Run your Django projects on Umbrel
 description: >-
   A local Django project launcher for Umbrel.  
@@ -22,8 +22,11 @@ support: https://bitstudio.com.ua
 
 port: 8000
 icon: https://imgpx.com/rkfYjpNAYtET.webp
-gallery: []
-releaseNotes: ""
+gallery:
+  - 1.jpg
+  - 2.jpg
+  - 3.jpg
+releaseNotes: "Add preview image"
 dependencies: []
 path: ""
 submitter: Fatalre

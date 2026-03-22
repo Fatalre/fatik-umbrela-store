@@ -2,7 +2,7 @@ manifestVersion: 1
 id: fatik-local-html-viewer
 name: Local HTML Viewer
 category: files
-version: "2.0.3"
+version: "2.0.4"
 tagline: View locally saved HTML pages by project
 description: >-
   An UmbrelOS app that stores projects with locally saved HTML pages.
@@ -17,10 +17,12 @@ support: https://bitstudio.com.ua
 port: 3000
 icon: https://play-lh.googleusercontent.com/atGONXqzf-FUn_hcMjNaSvqqqdOBaz01-qyEU4V4pqi0vLhN8ItqfaEsFdPQ2cU05Q=w240-h480
 
-gallery: []
+gallery:
+  - 1.jpg
+  - 2.jpg
 releaseNotes: >-
-  Version 2.0.1:
-  - install compatibility fixes
+  Version 2.0.4:
+  - add preview image
 dependencies: []
 path: ""
 defaultUsername: ""
