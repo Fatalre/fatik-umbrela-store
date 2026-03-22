@@ -710,6 +710,26 @@ app.get("/api/hls-by-path/file", async (req, res) => {
     }
 });
 
+const { ensureMp4 } = require("./lib/transcode");
+
+app.get("/api/stream-by-path-mp4", async (req, res) => {
+    try {
+        const relativePath = String(req.query.path || "");
+
+        if (!relativePath) {
+            return sendError(res, 400, "Missing path");
+        }
+
+        const mp4Path = await ensureMp4(relativePath);
+
+        res.setHeader("Content-Type", "video/mp4");
+        res.sendFile(mp4Path);
+    } catch (err) {
+        console.error("MP4 ERROR:", err);
+        sendError(res, 500, "Failed to convert video", err.message);
+    }
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("*", (req, res) => {

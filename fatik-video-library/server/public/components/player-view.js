@@ -109,7 +109,7 @@ async function attachSource(video, item, quality, resumePosition = 0) {
     };
 
     if (quality === "original") {
-        video.src = api.getOriginalStreamUrlByPath(item.relativePath);
+        video.src = `/api/stream-by-path-mp4?path=${encodeURIComponent(item.relativePath)}`;
         video.load();
 
         video.addEventListener("loadedmetadata", restoreTime, { once: true });
