@@ -69,10 +69,6 @@ export const api = {
         return `/api/poster/${encodeURIComponent(itemId)}`;
     },
 
-    getOriginalStreamUrl(itemId) {
-        return `/api/stream/${encodeURIComponent(itemId)}/original`;
-    },
-
     async getSubtitles(itemId) {
         const data = await request(`/api/subtitles/${encodeURIComponent(itemId)}`);
         return data.subtitles;
@@ -88,15 +84,22 @@ export const api = {
         return data.item;
     },
 
+    async getMediaSource(relativePath) {
+        return request(`/api/media-source?path=${encodeURIComponent(relativePath)}`);
+    },
+
+    async prepareTranscode(relativePath) {
+        return request("/api/transcode/prepare", {
+            method: "POST",
+            body: JSON.stringify({ path: relativePath })
+        });
+    },
+
     getOriginalStreamUrlByPath(relativePath) {
         return `/api/stream-by-path?path=${encodeURIComponent(relativePath)}`;
     },
 
-    getConvertedStreamUrlByPath(relativePath) {
+    getMp4StreamUrlByPath(relativePath) {
         return `/api/stream-by-path-mp4?path=${encodeURIComponent(relativePath)}`;
-    },
-
-    async getMediaSource(relativePath) {
-        return request(`/api/media-source?path=${encodeURIComponent(relativePath)}`);
     }
 };

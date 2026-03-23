@@ -3,10 +3,6 @@ import { renderEmptyState } from "./empty-state.js";
 import { renderBreadcrumb } from "./breadcrumb.js";
 import { formatBytes, formatDuration, formatResolution, escapeHtml } from "../utils.js";
 
-function wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function getResumePosition(item) {
     const position = Number(item.state?.progress?.position || 0);
     const duration = Number(item.state?.progress?.duration || item.metadata?.durationSeconds || 0);
@@ -56,39 +52,27 @@ function attachSubtitleTracks(video, item, subtitles) {
     });
 }
 
-async function resolvePlayableSource(relativePath, onPreparing) {
-    const maxAttempts = 180;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        const source = await api.getMediaSource(relativePath);
-
-        if (!source.preparing) {
-            return source;
-        }
-
-        onPreparing(`Preparing video for browser playback... (${attempt})`);
-        await wait(2000);
-    }
-
-    throw new Error("Video conversion is taking too long. Please try again.");
+function clearVideoSource(video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
 }
 
-async function attachSource(video, item, resumePosition = 0, onPreparing = () => {}) {
-    const source = await resolvePlayableSource(item.relativePath, onPreparing);
-    video.src = source.url;
+function setVideoSource(video, src, resumePosition = 0) {
+    video.src = src;
     video.load();
 
-    if (resumePosition > 0 && Number.isFinite(resumePosition)) {
-        video.addEventListener(
-            "loadedmetadata",
-            () => {
+    video.addEventListener(
+        "loadedmetadata",
+        () => {
+            if (resumePosition > 0 && Number.isFinite(resumePosition)) {
                 video.currentTime = resumePosition;
-            },
-            { once: true }
-        );
-    }
+            }
 
-    return source;
+            video.play().catch(() => {});
+        },
+        { once: true }
+    );
 }
 
 export async function renderPlayerPage(appRoot, relativePath) {
@@ -106,13 +90,13 @@ export async function renderPlayerPage(appRoot, relativePath) {
 
       <div class="player-layout">
         <div class="card player-box">
-          <div id="player-status" class="player-status">Checking media compatibility...</div>
           <video
             id="video-player"
             class="video-element"
             controls
             preload="metadata"
           ></video>
+          <div id="player-status" class="player-status" hidden></div>
         </div>
 
         <aside class="card player-panel">
@@ -146,30 +130,76 @@ export async function renderPlayerPage(appRoot, relativePath) {
     `;
 
         const video = document.getElementById("video-player");
+        const playerStatus = document.getElementById("player-status");
         const watchedButton = document.getElementById("watched-button");
         const restartButton = document.getElementById("restart-button");
-        const statusEl = document.getElementById("player-status");
 
         attachSubtitleTracks(video, item, subtitles);
 
-        try {
-            const source = await attachSource(video, item, resumePosition, (message) => {
-                statusEl.textContent = message;
-                statusEl.style.display = "block";
+        const showStatus = (message, type = "info", action = null) => {
+            playerStatus.hidden = false;
+            playerStatus.className = `player-status ${type}`;
+            playerStatus.innerHTML = "";
+
+            const text = document.createElement("p");
+            text.textContent = message;
+            playerStatus.appendChild(text);
+
+            if (action) {
+                playerStatus.appendChild(action);
+            }
+        };
+
+        const hideStatus = () => {
+            playerStatus.hidden = true;
+            playerStatus.innerHTML = "";
+            playerStatus.className = "player-status";
+        };
+
+        const loadMediaSource = async () => {
+            const source = await api.getMediaSource(item.relativePath);
+
+            if (source.type === "original" || source.type === "converted") {
+                hideStatus();
+                setVideoSource(video, source.url, resumePosition);
+                return;
+            }
+
+            clearVideoSource(video);
+
+            const prepareButton = document.createElement("button");
+            prepareButton.type = "button";
+            prepareButton.className = "primary-button";
+            prepareButton.textContent = "Prepare for browser playback";
+
+            prepareButton.addEventListener("click", async () => {
+                prepareButton.disabled = true;
+                showStatus(
+                    "Preparing video for browser playback. This may take a long time on low-power devices.",
+                    "info"
+                );
+
+                try {
+                    const result = await api.prepareTranscode(item.relativePath);
+                    hideStatus();
+                    setVideoSource(video, result.url, resumePosition);
+                } catch (error) {
+                    showStatus(
+                        "Failed to prepare video for browser playback.",
+                        "error"
+                    );
+                    prepareButton.disabled = false;
+                }
             });
 
-            statusEl.textContent = source.reason === "browser-friendly"
-                ? "Playing original file"
-                : "Playing cached MP4 version";
+            showStatus(
+                "This file is not supported for direct browser playback.",
+                "warning",
+                prepareButton
+            );
+        };
 
-            setTimeout(() => {
-                statusEl.style.display = "none";
-            }, 2000);
-        } catch (error) {
-            statusEl.style.display = "block";
-            statusEl.textContent = `Playback error: ${error.message}`;
-            throw error;
-        }
+        await loadMediaSource();
 
         watchedButton?.addEventListener("click", async () => {
             try {
@@ -187,6 +217,7 @@ export async function renderPlayerPage(appRoot, relativePath) {
             try {
                 await api.saveProgress(item.id, 0, video.duration || 0);
             } catch {
+                // no-op
             }
         });
 
@@ -199,6 +230,7 @@ export async function renderPlayerPage(appRoot, relativePath) {
             try {
                 await api.saveProgress(item.id, video.currentTime, video.duration || 0);
             } catch {
+                // no-op
             }
         });
 
@@ -207,6 +239,7 @@ export async function renderPlayerPage(appRoot, relativePath) {
                 await api.setWatched(item.id, true);
                 await api.saveProgress(item.id, 0, video.duration || 0);
             } catch {
+                // no-op
             }
         });
     } catch (error) {
