@@ -464,6 +464,10 @@ a {
     color: #ffffff;
 }
 
+.player-status[hidden] {
+    display: none !important;
+}
+
 .player-status.warning {
     color: #ffe9b5;
 }

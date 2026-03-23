@@ -3,7 +3,7 @@ id: fatik-video-library
 name: Video Library
 tagline: Folder-based video library for Umbrel
 category: media
-version: "0.3.2"
+version: "0.3.3"
 
 port: 3000
 icon: https://imgpx.com/VipaEh1CFabS.webp
@@ -16,7 +16,6 @@ description: >-
   and streaming-ready playback.
   For upload go to app folder from home -> fatik-video-library -> data -> library.
   Then you can create folder and upload video. Then press Rescan in application
-  For played in browser ONLY mp4
 
 developer: Fatalre
 website: https://bitstudio.com.ua
