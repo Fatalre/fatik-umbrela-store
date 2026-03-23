@@ -4,195 +4,124 @@ const { spawn } = require("child_process");
 
 const { config } = require("./config");
 const { ensureDir } = require("./fs-utils");
-const { getSafeLibraryAbsolutePath, normalizeRelativeLibraryPath } = require("./paths");
+const { getSafeLibraryAbsolutePath } = require("./paths");
 const { createStableId } = require("./ids");
 
-const TRANSCODE_SUBDIR = "mp4";
-const activeJobs = new Map();
-
 function getTranscodeKey(relativePath) {
-    const normalized = normalizeRelativeLibraryPath(relativePath);
-    return createStableId(`mp4:${normalized}`);
+    return createStableId(`mp4:${relativePath}`);
 }
 
-function getCachedMp4Path(relativePath) {
+function getOutputPath(relativePath) {
     const key = getTranscodeKey(relativePath);
-    return path.join(config.CACHE_DIR, TRANSCODE_SUBDIR, `${key}.mp4`);
+    return path.join(config.CACHE_DIR, "mp4", `${key}.mp4`);
 }
 
-function needsRebuild(sourcePath, outputPath) {
+function isCacheFresh(sourcePath, outputPath) {
     if (!fs.existsSync(outputPath)) {
-        return true;
+        return false;
     }
 
     const sourceStat = fs.statSync(sourcePath);
     const outputStat = fs.statSync(outputPath);
 
-    return sourceStat.mtimeMs > outputStat.mtimeMs;
+    return outputStat.mtimeMs >= sourceStat.mtimeMs;
 }
 
-function runFfmpegToMp4(sourcePath, outputPath) {
+function runFfmpeg(inputPath, outputPath) {
     return new Promise((resolve, reject) => {
-        const tempOutputPath = `${outputPath}.tmp`;
-        const outputDir = path.dirname(outputPath);
-        ensureDir(outputDir);
-
-        if (fs.existsSync(tempOutputPath)) {
-            fs.rmSync(tempOutputPath, { force: true });
-        }
-
         const args = [
-            "-hide_banner",
+            "-y",
+            "-nostdin",
             "-loglevel",
             "error",
-            "-y",
             "-i",
-            sourcePath,
-            "-map",
-            "0:v:0?",
-            "-map",
-            "0:a:0?",
+            inputPath,
             "-c:v",
             "libx264",
             "-preset",
-            "veryfast",
+            "ultrafast",
             "-crf",
-            "23",
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
+            "28",
             "-c:a",
             "aac",
             "-b:a",
-            "128k",
-            "-ac",
-            "2",
-            tempOutputPath
+            "96k",
+            "-movflags",
+            "+faststart",
+            outputPath
         ];
 
-        const ffmpeg = spawn("ffmpeg", args, {
+        const child = spawn("ffmpeg", args, {
             stdio: ["ignore", "ignore", "pipe"]
         });
 
-        let stderrBuffer = "";
+        let stderrTail = "";
 
-        ffmpeg.stderr.on("data", (chunk) => {
-            const text = chunk.toString();
-            stderrBuffer += text;
-            if (stderrBuffer.length > 16_000) {
-                stderrBuffer = stderrBuffer.slice(-16_000);
+        child.stderr.on("data", (chunk) => {
+            stderrTail += chunk.toString();
+            if (stderrTail.length > 20000) {
+                stderrTail = stderrTail.slice(-20000);
             }
-            process.stderr.write(`[ffmpeg] ${text}`);
         });
 
-        ffmpeg.on("error", (error) => {
-            if (fs.existsSync(tempOutputPath)) {
-                fs.rmSync(tempOutputPath, { force: true });
-            }
+        child.on("error", (error) => {
             reject(error);
         });
 
-        ffmpeg.on("close", (code) => {
-            if (code !== 0) {
-                if (fs.existsSync(tempOutputPath)) {
-                    fs.rmSync(tempOutputPath, { force: true });
-                }
-                reject(new Error(`ffmpeg exited with code ${code}. ${stderrBuffer.trim()}`.trim()));
+        child.on("close", (code) => {
+            if (code === 0) {
+                resolve();
                 return;
             }
 
-            fs.renameSync(tempOutputPath, outputPath);
-            resolve(outputPath);
+            reject(new Error(stderrTail || `ffmpeg exited with code ${code}`));
         });
     });
 }
 
-function isBrowserFriendlySource(relativePath, metadata = {}) {
-    const extension = path.extname(relativePath).toLowerCase();
-    if (extension !== ".mp4") {
-        return false;
+async function ensureMp4(relativePath) {
+    const inputPath = getSafeLibraryAbsolutePath(relativePath);
+
+    if (!fs.existsSync(inputPath)) {
+        throw new Error("Source file not found");
     }
 
-    const videoCodec = String(metadata.videoCodec || "").toLowerCase();
-    const audioCodec = String(metadata.audioTracks?.[0]?.codec || "").toLowerCase();
+    const outputPath = getOutputPath(relativePath);
 
-    const videoCompatible = videoCodec === "h264" || videoCodec === "avc1";
-    const audioCompatible = !audioCodec || audioCodec === "aac" || audioCodec === "mp4a";
+    if (isCacheFresh(inputPath, outputPath)) {
+        return outputPath;
+    }
 
-    return videoCompatible && audioCompatible;
+    ensureDir(path.dirname(outputPath));
+
+    await runFfmpeg(inputPath, outputPath);
+
+    return outputPath;
 }
 
-function getOrStartJob(relativePath) {
-    const normalized = normalizeRelativeLibraryPath(relativePath);
-    const sourcePath = getSafeLibraryAbsolutePath(normalized);
-    const outputPath = getCachedMp4Path(normalized);
+function getCachedMp4Info(relativePath) {
+    const sourcePath = getSafeLibraryAbsolutePath(relativePath);
+    const outputPath = getOutputPath(relativePath);
 
     if (!fs.existsSync(sourcePath)) {
-        throw new Error("Source video file not found");
-    }
-
-    if (!needsRebuild(sourcePath, outputPath)) {
         return {
-            status: "ready",
-            outputPath,
-            promise: Promise.resolve(outputPath)
+            exists: false,
+            fresh: false,
+            outputPath
         };
     }
 
-    const existing = activeJobs.get(normalized);
-    if (existing) {
-        return existing;
-    }
-
-    const job = {
-        status: "preparing",
-        outputPath,
-        promise: runFfmpegToMp4(sourcePath, outputPath)
-    };
-
-    job.promise
-        .then(() => {
-            activeJobs.delete(normalized);
-        })
-        .catch((error) => {
-            job.status = "failed";
-            job.error = error;
-            activeJobs.delete(normalized);
-        });
-
-    activeJobs.set(normalized, job);
-    return job;
-}
-
-async function ensureMp4(relativePath, options = {}) {
-    const wait = options.wait !== false;
-    const job = getOrStartJob(relativePath);
-
-    if (job.status === "ready") {
-        return {
-            status: "ready",
-            outputPath: job.outputPath
-        };
-    }
-
-    if (!wait) {
-        return {
-            status: "preparing",
-            outputPath: job.outputPath
-        };
-    }
-
-    await job.promise;
+    const fresh = isCacheFresh(sourcePath, outputPath);
 
     return {
-        status: "ready",
-        outputPath: job.outputPath
+        exists: fs.existsSync(outputPath),
+        fresh,
+        outputPath
     };
 }
 
 module.exports = {
     ensureMp4,
-    getCachedMp4Path,
-    isBrowserFriendlySource
+    getOutputPath,
+    getCachedMp4Info
 };
