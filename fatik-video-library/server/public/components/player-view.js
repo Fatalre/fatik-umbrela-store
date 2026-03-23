@@ -1,24 +1,7 @@
-import {api} from "../api.js";
-import {renderEmptyState} from "./empty-state.js";
-import {renderBreadcrumb} from "./breadcrumb.js";
-import {renderQualitySelector} from "./quality-selector.js";
-import {formatBytes, formatDuration, formatResolution, escapeHtml} from "../utils.js";
-
-function getSavedQuality(itemId) {
-    return localStorage.getItem(`fatik-video-library:quality:${itemId}`) || "original";
-}
-
-function getInitialQuality(item) {
-    if (shouldPreferTranscodedPlayback(item)) {
-        return "480p";
-    }
-
-    return "original";
-}
-
-function saveQuality(itemId, value) {
-    localStorage.setItem(`fatik-video-library:quality:${itemId}`, value);
-}
+import { api } from "../api.js";
+import { renderEmptyState } from "./empty-state.js";
+import { renderBreadcrumb } from "./breadcrumb.js";
+import { formatBytes, formatDuration, formatResolution, escapeHtml } from "../utils.js";
 
 function getResumePosition(item) {
     const position = Number(item.state?.progress?.position || 0);
@@ -33,26 +16,6 @@ function getResumePosition(item) {
     }
 
     return position;
-}
-
-function shouldPreferTranscodedPlayback(item) {
-    const fileName = (item.fileName || "").toLowerCase();
-
-    if (
-        fileName.endsWith(".avi") ||
-        fileName.endsWith(".mkv") ||
-        fileName.endsWith(".mov")
-    ) {
-        return true;
-    }
-
-    const codec = String(item.metadata?.videoCodec || "").toLowerCase();
-
-    if (codec && codec !== "h264" && codec !== "avc1") {
-        return true;
-    }
-
-    return false;
 }
 
 function renderSubtitleInfo(subtitles) {
@@ -89,89 +52,27 @@ function attachSubtitleTracks(video, item, subtitles) {
     });
 }
 
-async function ensureHlsBuilt(relativePath) {
-    await api.buildHlsByPath(relativePath);
-    return api.getHlsMasterUrlByPath(relativePath);
+function clearVideoSource(video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
 }
 
-async function attachSource(video, item, quality, resumePosition = 0) {
-    const wasPaused = video.paused;
+function setVideoSource(video, src, resumePosition = 0) {
+    video.src = src;
+    video.load();
 
-    if (video._hlsInstance) {
-        video._hlsInstance.destroy();
-        video._hlsInstance = null;
-    }
-
-    const restoreTime = () => {
-        if (resumePosition > 0 && Number.isFinite(resumePosition)) {
-            video.currentTime = resumePosition;
-        }
-    };
-
-    if (quality === "original") {
-        video.src = `/api/stream-by-path-mp4?path=${encodeURIComponent(item.relativePath)}`;
-        video.load();
-
-        video.addEventListener("loadedmetadata", restoreTime, { once: true });
-
-        video.addEventListener(
-            "error",
-            async () => {
-                if (!shouldPreferTranscodedPlayback(item)) {
-                    return;
-                }
-
-                try {
-                    await attachSource(video, item, "480p", resumePosition);
-                } catch (error) {
-                    console.error("Fallback to HLS failed:", error);
-                }
-            },
-            { once: true }
-        );
-
-        if (!wasPaused) {
-            video.play().catch(() => {});
-        }
-
-        return;
-    }
-
-    await api.buildHlsVariantByPath(item.relativePath, quality);
-    const playlistUrl = api.getHlsPlaylistUrlByPath(item.relativePath, quality);
-
-    if (window.Hls && window.Hls.isSupported()) {
-        const hls = new window.Hls();
-        video._hlsInstance = hls;
-
-        hls.loadSource(playlistUrl);
-        hls.attachMedia(video);
-
-        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-            restoreTime();
-
-            if (!wasPaused) {
-                video.play().catch(() => {});
+    video.addEventListener(
+        "loadedmetadata",
+        () => {
+            if (resumePosition > 0 && Number.isFinite(resumePosition)) {
+                video.currentTime = resumePosition;
             }
-        });
 
-        return;
-    }
-
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = playlistUrl;
-        video.load();
-
-        video.addEventListener("loadedmetadata", restoreTime, { once: true });
-
-        if (!wasPaused) {
             video.play().catch(() => {});
-        }
-
-        return;
-    }
-
-    throw new Error("HLS playback is not supported in this browser");
+        },
+        { once: true }
+    );
 }
 
 export async function renderPlayerPage(appRoot, relativePath) {
@@ -182,12 +83,7 @@ export async function renderPlayerPage(appRoot, relativePath) {
         const item = await api.getItemByPath(relativePath);
         const subtitles = await api.getSubtitles(item.id);
         const metadata = item.metadata || {};
-        let selectedQuality = getSavedQuality(item.id);
         const resumePosition = getResumePosition(item);
-
-        if (!selectedQuality || selectedQuality === "original") {
-            selectedQuality = getInitialQuality(item);
-        }
 
         pageRoot.innerHTML = `
       ${renderBreadcrumb(item.parentPath || "")}
@@ -200,6 +96,7 @@ export async function renderPlayerPage(appRoot, relativePath) {
             controls
             preload="metadata"
           ></video>
+          <div id="player-status" class="player-status" hidden></div>
         </div>
 
         <aside class="card player-panel">
@@ -217,8 +114,6 @@ export async function renderPlayerPage(appRoot, relativePath) {
             ${renderSubtitleInfo(subtitles)}
           </div>
 
-          ${renderQualitySelector(selectedQuality)}
-
           <div class="actions-row">
             <button id="watched-button" class="secondary-button" type="button">
               ${item.state?.watched ? "Watched" : "Mark as watched"}
@@ -235,20 +130,76 @@ export async function renderPlayerPage(appRoot, relativePath) {
     `;
 
         const video = document.getElementById("video-player");
+        const playerStatus = document.getElementById("player-status");
         const watchedButton = document.getElementById("watched-button");
         const restartButton = document.getElementById("restart-button");
-        const qualitySelect = document.getElementById("quality-select");
 
         attachSubtitleTracks(video, item, subtitles);
 
-        try {
-            await attachSource(video, item, selectedQuality, resumePosition);
-        } catch (error) {
-            console.error(error);
-            qualitySelect.value = "original";
-            saveQuality(item.id, "original");
-            await attachSource(video, item, "original", resumePosition);
-        }
+        const showStatus = (message, type = "info", action = null) => {
+            playerStatus.hidden = false;
+            playerStatus.className = `player-status ${type}`;
+            playerStatus.innerHTML = "";
+
+            const text = document.createElement("p");
+            text.textContent = message;
+            playerStatus.appendChild(text);
+
+            if (action) {
+                playerStatus.appendChild(action);
+            }
+        };
+
+        const hideStatus = () => {
+            playerStatus.hidden = true;
+            playerStatus.innerHTML = "";
+            playerStatus.className = "player-status";
+        };
+
+        const loadMediaSource = async () => {
+            const source = await api.getMediaSource(item.relativePath);
+
+            if (source.type === "original" || source.type === "converted") {
+                hideStatus();
+                setVideoSource(video, source.url, resumePosition);
+                return;
+            }
+
+            clearVideoSource(video);
+
+            const prepareButton = document.createElement("button");
+            prepareButton.type = "button";
+            prepareButton.className = "primary-button";
+            prepareButton.textContent = "Prepare for browser playback";
+
+            prepareButton.addEventListener("click", async () => {
+                prepareButton.disabled = true;
+                showStatus(
+                    "Preparing video for browser playback. This may take a long time on low-power devices.",
+                    "info"
+                );
+
+                try {
+                    const result = await api.prepareTranscode(item.relativePath);
+                    hideStatus();
+                    setVideoSource(video, result.url, resumePosition);
+                } catch (error) {
+                    showStatus(
+                        "Failed to prepare video for browser playback.",
+                        "error"
+                    );
+                    prepareButton.disabled = false;
+                }
+            });
+
+            showStatus(
+                "This file is not supported for direct browser playback.",
+                "warning",
+                prepareButton
+            );
+        };
+
+        await loadMediaSource();
 
         watchedButton?.addEventListener("click", async () => {
             try {
@@ -266,26 +217,7 @@ export async function renderPlayerPage(appRoot, relativePath) {
             try {
                 await api.saveProgress(item.id, 0, video.duration || 0);
             } catch {
-            }
-        });
-
-        qualitySelect?.addEventListener("change", async (event) => {
-            const quality = event.target.value;
-            const currentTime = video.currentTime || 0;
-
-            saveQuality(item.id, quality);
-
-            qualitySelect.disabled = true;
-            try {
-                await attachSource(video, item, quality, currentTime);
-            } catch (error) {
-                console.error(error);
-                alert(`${error.message}. Falling back to Original.`);
-                qualitySelect.value = "original";
-                saveQuality(item.id, "original");
-                await attachSource(video, item, "original", currentTime);
-            } finally {
-                qualitySelect.disabled = false;
+                // no-op
             }
         });
 
@@ -298,6 +230,7 @@ export async function renderPlayerPage(appRoot, relativePath) {
             try {
                 await api.saveProgress(item.id, video.currentTime, video.duration || 0);
             } catch {
+                // no-op
             }
         });
 
@@ -306,6 +239,7 @@ export async function renderPlayerPage(appRoot, relativePath) {
                 await api.setWatched(item.id, true);
                 await api.saveProgress(item.id, 0, video.duration || 0);
             } catch {
+                // no-op
             }
         });
     } catch (error) {
