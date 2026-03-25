@@ -14,21 +14,18 @@ const {
     getRelativePathFromAbsolute,
     normalizeRelativeLibraryPath
 } = require("./paths");
-const {
-    getLocalVideoMetadata
-} = require("./metadata");
-const {
-    loadDatabase,
-    getItemState
-} = require("./db");
-const {
-    findExternalSubtitleFiles
-} = require("./subtitles");
+const { getLocalVideoMetadata } = require("./metadata");
+const { loadDatabase, getItemState } = require("./db");
+const { findExternalSubtitleFiles } = require("./subtitles");
 
-let cache = {
-    builtAt: 0,
+const cache = {
+    treeBuiltAt: 0,
     tree: null,
-    items: []
+    folderNodes: new Map(),
+    folderListings: new Map(),
+    itemByRelativePath: new Map(),
+    itemById: new Map(),
+    allItemsIndexed: false
 };
 
 function createFolderNode(relativePath, name) {
@@ -43,37 +40,76 @@ function createFolderNode(relativePath, name) {
     };
 }
 
-function createItemFromFile(relativePath, metadata, fileStat) {
-    const itemId = createStableId(`video:${relativePath}`);
+function createFallbackMetadata(relativePath, fileStat) {
+    return {
+        title: path.basename(relativePath, path.extname(relativePath)),
+        kind: /s\d{1,2}e\d{1,2}/i.test(relativePath) ? "episode" : "movie",
+        durationSeconds: 0,
+        sizeBytes: Number(fileStat?.size || 0),
+        resolution: null,
+        videoCodec: null,
+        audioTracks: [],
+        subtitleTracks: []
+    };
+}
+
+async function buildMetadataForFile(relativePath) {
+    const normalizedPath = normalizeRelativeLibraryPath(relativePath);
+
+    if (cache.itemByRelativePath.has(normalizedPath)) {
+        return cache.itemByRelativePath.get(normalizedPath);
+    }
+
+    const absolutePath = getSafeLibraryAbsolutePath(normalizedPath);
+    const fileStat = statSafe(absolutePath);
+
+    if (!fileStat || !fileStat.isFile()) {
+        return null;
+    }
+
+    let metadata;
+    try {
+        metadata = await getLocalVideoMetadata(normalizedPath);
+    } catch {
+        metadata = createFallbackMetadata(normalizedPath, fileStat);
+    }
+
+    const itemId = createStableId(`video:${normalizedPath}`);
     const db = loadDatabase();
 
-    return {
+    const item = {
         id: itemId,
         type: "video",
         title: metadata.title,
         kind: metadata.kind,
-        relativePath,
-        parentPath: path.dirname(relativePath).replace(/\\/g, "/") === "."
+        relativePath: normalizedPath,
+        parentPath: path.dirname(normalizedPath).replace(/\\/g, "/") === "."
             ? ""
-            : path.dirname(relativePath).replace(/\\/g, "/"),
-        fileName: path.basename(relativePath),
+            : path.dirname(normalizedPath).replace(/\\/g, "/"),
+        fileName: path.basename(normalizedPath),
         sizeBytes: Number(fileStat.size || 0),
         metadata,
-        subtitles: findExternalSubtitleFiles(relativePath),
+        subtitles: findExternalSubtitleFiles(normalizedPath),
         state: getItemState(db, itemId)
     };
+
+    cache.itemByRelativePath.set(normalizedPath, item);
+    cache.itemById.set(itemId, item);
+
+    return item;
 }
 
 async function buildFolderNodeRecursive(relativePath = "") {
-    const absolutePath = getSafeLibraryAbsolutePath(relativePath);
-    const dirName = relativePath ? path.basename(relativePath) : "Library";
-    const node = createFolderNode(relativePath, dirName);
+    const normalizedPath = normalizeRelativeLibraryPath(relativePath);
+    const absolutePath = getSafeLibraryAbsolutePath(normalizedPath);
+    const dirName = normalizedPath ? path.basename(normalizedPath) : "Library";
+    const node = createFolderNode(normalizedPath, dirName);
 
     const entries = readDirSafe(absolutePath).sort((a, b) => a.name.localeCompare(b.name));
 
     for (const entry of entries) {
         const childRelativePath = normalizeRelativeLibraryPath(
-            path.join(relativePath, entry.name).replace(/\\/g, "/")
+            path.join(normalizedPath, entry.name).replace(/\\/g, "/")
         );
 
         if (entry.isDirectory()) {
@@ -89,49 +125,8 @@ async function buildFolderNodeRecursive(relativePath = "") {
         }
     }
 
+    cache.folderNodes.set(normalizedPath, node);
     return node;
-}
-
-async function buildItemsIndex() {
-    const items = [];
-
-    walkDirectoryRecursive(config.LIBRARY_DIR, (absoluteFilePath) => {
-        const relativePath = getRelativePathFromAbsolute(absoluteFilePath);
-
-        if (!isVideoFile(relativePath)) {
-            return;
-        }
-
-        items.push(relativePath);
-    });
-
-    const enrichedItems = [];
-
-    for (const relativePath of items) {
-        const absolutePath = getSafeLibraryAbsolutePath(relativePath);
-        const fileStat = statSafe(absolutePath);
-        if (!fileStat || !fileStat.isFile()) continue;
-
-        let metadata;
-        try {
-            metadata = await getLocalVideoMetadata(relativePath);
-        } catch {
-            metadata = {
-                title: path.basename(relativePath, path.extname(relativePath)),
-                kind: "movie",
-                durationSeconds: 0,
-                sizeBytes: Number(fileStat.size || 0),
-                resolution: null,
-                videoCodec: null,
-                audioTracks: [],
-                subtitleTracks: []
-            };
-        }
-
-        enrichedItems.push(createItemFromFile(relativePath, metadata, fileStat));
-    }
-
-    return enrichedItems.sort((a, b) => a.title.localeCompare(b.title));
 }
 
 async function buildLibraryTree(options = {}) {
@@ -141,28 +136,37 @@ async function buildLibraryTree(options = {}) {
         return cache.tree;
     }
 
-    const tree = await buildFolderNodeRecursive("");
-    const items = await buildItemsIndex();
+    cache.folderNodes.clear();
+    cache.folderListings.clear();
 
-    cache = {
-        builtAt: Date.now(),
-        tree,
-        items
-    };
+    const tree = await buildFolderNodeRecursive("");
+
+    cache.tree = tree;
+    cache.treeBuiltAt = Date.now();
 
     return tree;
 }
 
-async function ensureCacheReady() {
+async function ensureTreeReady() {
     if (!cache.tree) {
         await buildLibraryTree({ forceRefresh: true });
     }
 }
 
-async function listFolderContents(folderPath = "") {
-    await ensureCacheReady();
+function buildFolderListingCacheKey(folderPath) {
+    return normalizeRelativeLibraryPath(folderPath);
+}
+
+async function listFolderContents(folderPath = "", options = {}) {
+    await ensureTreeReady();
 
     const normalizedFolderPath = normalizeRelativeLibraryPath(folderPath);
+    const cacheKey = buildFolderListingCacheKey(normalizedFolderPath);
+
+    if (!options.forceRefresh && cache.folderListings.has(cacheKey)) {
+        return cache.folderListings.get(cacheKey);
+    }
+
     const absolutePath = getSafeLibraryAbsolutePath(normalizedFolderPath);
 
     if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isDirectory()) {
@@ -180,27 +184,27 @@ async function listFolderContents(folderPath = "") {
         );
 
         if (entry.isDirectory()) {
-            const childAbsolutePath = getSafeLibraryAbsolutePath(childRelativePath);
-            const childEntries = readDirSafe(childAbsolutePath);
-            const videoCount = childEntries.filter((item) => item.isFile() && isVideoFile(item.name)).length;
+            const childNode = cache.folderNodes.get(childRelativePath);
 
             folders.push({
                 id: createStableId(`folder:${childRelativePath}`),
                 type: "folder",
                 name: entry.name,
                 relativePath: childRelativePath,
-                videoCount
+                videoCount: childNode ? childNode.videoCount : 0
             });
             continue;
         }
 
         if (entry.isFile() && isVideoFile(entry.name)) {
-            const item = cache.items.find((value) => value.relativePath === childRelativePath);
-            if (item) videos.push(item);
+            const item = await buildMetadataForFile(childRelativePath);
+            if (item) {
+                videos.push(item);
+            }
         }
     }
 
-    return {
+    const result = {
         folder: {
             name: normalizedFolderPath ? path.basename(normalizedFolderPath) : "Library",
             relativePath: normalizedFolderPath
@@ -208,31 +212,74 @@ async function listFolderContents(folderPath = "") {
         folders,
         videos
     };
+
+    cache.folderListings.set(cacheKey, result);
+
+    return result;
+}
+
+async function indexAllItemsIfNeeded() {
+    if (cache.allItemsIndexed) {
+        return;
+    }
+
+    const relativePaths = [];
+
+    walkDirectoryRecursive(config.LIBRARY_DIR, (absoluteFilePath) => {
+        const relativePath = getRelativePathFromAbsolute(absoluteFilePath);
+
+        if (!isVideoFile(relativePath)) {
+            return;
+        }
+
+        relativePaths.push(relativePath);
+    });
+
+    for (const relativePath of relativePaths) {
+        await buildMetadataForFile(relativePath);
+    }
+
+    cache.allItemsIndexed = true;
 }
 
 async function findItemById(itemId) {
-    await ensureCacheReady();
-    return cache.items.find((item) => item.id === itemId) || null;
+    if (cache.itemById.has(itemId)) {
+        return cache.itemById.get(itemId);
+    }
+
+    await indexAllItemsIfNeeded();
+    return cache.itemById.get(itemId) || null;
+}
+
+async function findItemByRelativePath(relativePath) {
+    const normalized = normalizeRelativeLibraryPath(relativePath);
+
+    if (cache.itemByRelativePath.has(normalized)) {
+        return cache.itemByRelativePath.get(normalized);
+    }
+
+    const item = await buildMetadataForFile(normalized);
+    return item || null;
 }
 
 async function searchItems(query, limit = 50) {
-    await ensureCacheReady();
+    const normalizedQuery = String(query || "").trim().toLowerCase();
+    if (!normalizedQuery) return [];
 
-    const normalized = String(query || "").trim().toLowerCase();
-    if (!normalized) return [];
+    await indexAllItemsIfNeeded();
 
-    return cache.items
+    return Array.from(cache.itemById.values())
         .filter((item) =>
-            item.title.toLowerCase().includes(normalized) ||
-            item.relativePath.toLowerCase().includes(normalized)
+            item.title.toLowerCase().includes(normalizedQuery) ||
+            item.relativePath.toLowerCase().includes(normalizedQuery)
         )
         .slice(0, limit);
 }
 
 async function getContinueWatchingItems(limit = 12) {
-    await ensureCacheReady();
+    await indexAllItemsIfNeeded();
 
-    return cache.items
+    return Array.from(cache.itemById.values())
         .filter((item) => {
             const progress = item.state?.progress;
             const duration = Number(progress?.duration || item.metadata?.durationSeconds || 0);
@@ -251,13 +298,6 @@ async function getContinueWatchingItems(limit = 12) {
             return bTime - aTime;
         })
         .slice(0, limit);
-}
-
-async function findItemByRelativePath(relativePath) {
-    await ensureCacheReady();
-
-    const normalized = normalizeRelativeLibraryPath(relativePath);
-    return cache.items.find((item) => item.relativePath === normalized) || null;
 }
 
 module.exports = {
