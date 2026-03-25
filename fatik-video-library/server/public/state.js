@@ -1,7 +1,8 @@
 export const state = {
-    tree: null,
-    currentFolderPath: "",
-    currentItemId: null,
-    searchQuery: "",
-    searchResults: []
+  tree: null,
+  currentFolderPath: "",
+  currentItemId: null,
+  searchQuery: "",
+  searchResults: [],
+  expandedFolders: new Set([""])
 };

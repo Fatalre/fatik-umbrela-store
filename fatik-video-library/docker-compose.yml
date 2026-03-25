@@ -1,11 +1,11 @@
 services:
   app_proxy:
     environment:
-      APP_HOST: server
+      APP_HOST: fatik-video-library_server_1
       APP_PORT: 3000
 
   server:
-    image: fatalre/fatik-video-library:0.3.0
+    image: fatalre/fatik-video-library:0.3.1
     restart: unless-stopped
     stop_grace_period: 1m
 
